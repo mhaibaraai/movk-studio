@@ -1,0 +1,36 @@
+{
+  "name": "movk-studio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "typecheck": "nuxt typecheck",
+    "clean": "movk-clean"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.114",
+    "@iconify-json/simple-icons": "^1.2.87",
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
+    "@movk/core": "^1.3.1",
+    "@movk/mapbox": "^1.0.0",
+    "@movk/nuxt": "^1.4.2",
+    "@nuxt/ui": "^4.9.0",
+    "mapbox-gl": "^3.25.0",
+    "nuxt": "^4.4.8",
+    "tailwindcss": "^4.3.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.16.0",
+    "@types/node": "^26.0.1",
+    "eslint": "^10.6.0",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.5"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>movk-studio · AI Copilot 工作台原型</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0a0d13;
+      --panel: #11151d;
+      --panel-2: #161b25;
+      --panel-3: #1c2230;
+      --border: #232a36;
+      --border-soft: #1a202b;
+      --text: #e6e9ef;
+      --muted: #8a93a6;
+      --accent: #5b9dff;
+      --accent-2: #7c5cff;
+      --ok: #3fd68b;
+      --warn: #ffb454;
+      --danger: #ff6b6b;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 8px 30px rgba(0,0,0,.35);
+    }
+    [data-theme="light"] {
+      --bg: #eef1f7;
+      --panel: #ffffff;
+      --panel-2: #f4f6fb;
+      --panel-3: #e9edf5;
+      --border: #e2e7f0;
+      --border-soft: #eef1f7;
+      --text: #1a1f29;
+      --muted: #6b7385;
+      --shadow: 0 8px 30px rgba(20,30,60,.10);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text);
+      display: flex; flex-direction: row; overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+    button { font-family: inherit; }
+
+    /* ── Sidebar（对应 UDashboardSidebar）── */
+    .sidebar { width: 220px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: width .2s ease; z-index: 100; }
+    .sidebar.collapsed { width: 56px; }
+    .sb-head { height: 54px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--border); overflow: hidden; }
+    .sb-logo { width: 27px; height: 27px; flex-shrink: 0; border-radius: 7px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: grid; place-items: center; color: #fff; font-size: 14px; font-weight: 700; box-shadow: 0 2px 10px rgba(91,157,255,.4); }
+    .sb-brand { font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; flex: 1; }
+    .sb-collapse { flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); cursor: pointer; font-size: 13px; display: grid; place-items: center; transition: transform .2s; }
+    .sb-collapse:hover { color: var(--text); border-color: var(--accent); }
+    .sidebar.collapsed .sb-collapse { transform: scaleX(-1); }
+    .sb-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+    .sb-new-chat { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: none; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); cursor: pointer; font-size: 13px; font-weight: 500; margin-bottom: 6px; white-space: nowrap; overflow: hidden; }
+    .sb-new-chat:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+    .sb-section-label { font-size: 10.5px; color: var(--muted); font-weight: 600; letter-spacing: .6px; text-transform: uppercase; padding: 10px 10px 4px; white-space: nowrap; overflow: hidden; }
+    .sb-nav-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; color: var(--muted); border: 1px solid transparent; white-space: nowrap; overflow: hidden; user-select: none; }
+    .sb-nav-item:hover { color: var(--text); background: var(--panel-2); }
+    .sb-nav-item.active { color: var(--text); background: var(--panel-2); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+    .sb-footer { flex-shrink: 0; padding: 10px 8px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 6px; overflow: hidden; }
+    .pill { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); padding: 5px 9px; border: 1px solid var(--border); border-radius: 20px; cursor: pointer; background: var(--panel-2); white-space: nowrap; }
+    .pill .dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--ok); }
+    .sb-icon-btn { flex-shrink: 0; width: 30px; height: 30px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 14px; display: grid; place-items: center; }
+    .sb-icon-btn:hover { border-color: var(--accent); }
+    .sidebar.collapsed .sb-brand,
+    .sidebar.collapsed .sb-new-chat .sb-lbl,
+    .sidebar.collapsed .sb-section-label,
+    .sidebar.collapsed .sb-nav-item .sb-lbl,
+    .sidebar.collapsed .sb-footer .pill,
+    .sidebar.collapsed .session-item .si-main,
+    .sidebar.collapsed .session-item .si-trail { display: none; }
+    .sidebar.collapsed .sb-body { padding: 8px 6px; }
+    .sidebar.collapsed .sb-new-chat { justify-content: center; padding: 8px; }
+    .sidebar.collapsed .sb-nav-item { justify-content: center; padding: 8px; }
+
+    /* ── 主体 ── */
+    main { flex: 1; display: flex; min-height: 0; min-width: 0; }
+    .stage { flex: 1; position: relative; min-width: 0; display: flex; flex-direction: column; }
+    .stage-bar {
+      height: 44px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px;
+      border-bottom: 1px solid var(--border); background: var(--panel); font-size: 13px;
+    }
+    .stage-bar .st-title { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+    .stage-bar .st-sub { color: var(--muted); font-size: 12px; }
+    .stage-bar .st-actions { margin-left: auto; display: flex; gap: 6px; }
+    .chip { font-size: 12px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); cursor: pointer; }
+    .chip:hover { color: var(--text); border-color: var(--accent); }
+    .stage-body { flex: 1; position: relative; min-height: 0; overflow: auto; }
+
+    .view { display: none; position: absolute; inset: 0; }
+    .view.active { display: block; }
+
+    /* 地图视图 */
+    #map { position: absolute; inset: 0; }
+    .map-mask { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px rgba(0,0,0,.3); }
+    .badge-3d {
+      position: absolute; right: 14px; top: 14px; z-index: 500;
+      background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(10px);
+      border: 1px solid var(--border); border-radius: 20px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    }
+
+    /* Shared State 浮层（地图） */
+    .state-panel {
+      position: absolute; left: 14px; bottom: 14px; z-index: 500;
+      background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 13px; min-width: 230px; font-size: 12.5px; box-shadow: var(--shadow);
+    }
+    .state-panel h4 { margin: 0 0 8px; font-size: 10.5px; color: var(--muted); font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }
+    .state-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+    .state-row .sw { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); flex-shrink: 0; }
+    .state-row .sw.off { background: var(--border); }
+    .state-row .count { margin-left: auto; color: var(--muted); }
+
+    /* 表单视图 */
+    .form-view { padding: 28px; max-width: 760px; margin: 0 auto; }
+    .form-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px; box-shadow: var(--shadow); }
+    .form-card h2 { margin: 0 0 4px; font-size: 18px; }
+    .form-card .desc { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    .field { margin-bottom: 16px; animation: fade .3s ease; }
+    .field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+    .field label .req { color: var(--danger); margin-left: 3px; }
+    .field .control {
+      width: 100%; padding: 9px 12px; background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 9px; color: var(--text); font: inherit; font-size: 13.5px; outline: none;
+    }
+    .field .control:focus { border-color: var(--accent); }
+    .field select.control { cursor: pointer; }
+    .field .err { color: var(--danger); font-size: 11.5px; margin-top: 5px; display: none; }
+    .field.invalid .control { border-color: var(--danger); }
+    .field.invalid .err { display: block; }
+    .field .hint-text { color: var(--muted); font-size: 11.5px; margin-top: 5px; }
+    .form-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 50px 0; }
+    .form-actions { display: flex; gap: 10px; margin-top: 22px; }
+    .btn { padding: 9px 18px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 13.5px; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn:hover { filter: brightness(1.08); }
+
+    /* 数据表视图 */
+    .data-view { padding: 20px; }
+    .table-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .filter-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 5px 10px; border-radius: 16px; background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); color: var(--text); animation: fade .25s; }
+    .filter-chip .x { cursor: pointer; opacity: .7; }
+    .filter-chip .x:hover { opacity: 1; }
+    .table-meta { margin-left: auto; color: var(--muted); font-size: 12px; }
+    table.data { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; font-size: 13px; }
+    table.data th { text-align: left; padding: 11px 14px; background: var(--panel-2); color: var(--muted); font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+    table.data th .arrow { font-size: 10px; opacity: .8; }
+    table.data td { padding: 10px 14px; border-bottom: 1px solid var(--border-soft); }
+    table.data tr:last-child td { border-bottom: none; }
+    table.data tbody tr:hover { background: var(--panel-2); }
+    .status-tag { font-size: 11.5px; padding: 3px 9px; border-radius: 12px; font-weight: 500; }
+    .status-tag.active { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+    .status-tag.inactive { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+    .status-tag.pending { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+    .row-hidden { display: none; }
+
+    /* ── Copilot 面板 ── */
+    .copilot { width: 380px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; position: relative; }
+    .copilot-head { height: 47px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; }
+    .copilot-head .ai { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--accent-2), var(--accent)); display: grid; place-items: center; font-size: 12px; }
+    .copilot-head .status { margin-left: auto; font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+    .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    .msg { display: flex; gap: 9px; max-width: 100%; animation: fade .25s ease; }
+    @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .msg .avatar { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; display: grid; place-items: center; font-size: 13px; }
+    .msg.user { flex-direction: row-reverse; }
+    .msg.user .avatar { background: var(--panel-2); border: 1px solid var(--border); }
+    .msg.ai .avatar { background: linear-gradient(135deg, var(--accent-2), var(--accent)); }
+    .bubble { padding: 9px 12px; border-radius: 11px; font-size: 13.5px; line-height: 1.55; }
+    .msg.user .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 3px; }
+    .msg.ai .bubble { background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+    .msg-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+    .tool-steps { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
+    .step { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+    .step .ic { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; flex-shrink: 0; }
+    .step .ic.run { border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .7s linear infinite; }
+    .step .ic.ok { background: var(--ok); color: #06281a; }
+    .step .ic.wait { border: 2px solid var(--border); }
+    .step code { color: var(--text); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .gen-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .gen-card .gc-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border); }
+    .gen-card .gc-body { padding: 10px 11px; font-size: 12.5px; color: var(--muted); }
+    .gen-card .coord { font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+    .gen-card .gc-actions { display: flex; gap: 6px; padding: 0 11px 11px; }
+    .mini-btn { font-size: 12px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; }
+    .mini-btn:hover { border-color: var(--accent); }
+    .feat-list { display: flex; flex-direction: column; }
+    .feat-item { display: flex; align-items: center; gap: 8px; padding: 7px 11px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+    .feat-item:last-child { border-bottom: none; }
+    .feat-item .tag { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+    /* schema 预览 */
+    .schema-card { background: #0d1017; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+    [data-theme="light"] .schema-card { background: #1a1f29; }
+    .schema-card .sc-head { padding: 8px 11px; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; gap: 7px; align-items: center; }
+    .schema-card pre { margin: 0; padding: 11px; color: #c8d3e6; line-height: 1.55; overflow-x: auto; }
+    .schema-card .k { color: #7cc4ff; }
+    .schema-card .s { color: #7ee0a8; }
+
+    /* 聚合 / 图表卡片 */
+    .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 11px; }
+    .chart-card .cc-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; font-size: 12px; }
+    .bar-row .bl { width: 58px; color: var(--muted); flex-shrink: 0; }
+    .bar-row .bt { flex: 1; height: 18px; background: var(--panel-2); border-radius: 5px; overflow: hidden; }
+    .bar-row .bf { height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .6s ease; }
+    .bar-row .bv { width: 30px; text-align: right; color: var(--text); flex-shrink: 0; }
+
+    .confirm { background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: 10px; padding: 11px 12px; }
+    .confirm .ct { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; color: var(--warn); }
+    .confirm p { margin: 7px 0 10px; font-size: 12.5px; color: var(--text); }
+    .confirm small { color: var(--muted); }
+    .confirm .row { display: flex; gap: 8px; justify-content: flex-end; }
+    .btn-danger { background: var(--danger); color: #fff; border: none; }
+    .btn-ghost { background: transparent; }
+
+    /* 输入区 */
+    .prompt { flex-shrink: 0; padding: 12px; border-top: 1px solid var(--border); }
+    .suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; }
+    .sug { font-size: 12px; padding: 5px 10px; border-radius: 16px; border: 1px solid var(--border); color: var(--muted); cursor: pointer; background: var(--panel-2); }
+    .sug:hover { color: var(--text); border-color: var(--accent); }
+    .input-box { display: flex; align-items: flex-end; gap: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; padding: 8px 8px 8px 12px; }
+    .input-box textarea { flex: 1; background: none; border: none; color: var(--text); font: inherit; font-size: 13.5px; resize: none; outline: none; max-height: 90px; line-height: 1.5; }
+    .send { width: 34px; height: 34px; border-radius: 9px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-size: 15px; flex-shrink: 0; }
+    .send:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* 历史会话（sidebar 内永久可见） */
+    #sessionList { display: flex; flex-direction: column; gap: 2px; }
+    #sessionList .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 10px; }
+    .hist-group { font-size: 10.5px; color: var(--muted); font-weight: 600; letter-spacing: .6px; text-transform: uppercase; padding: 12px 10px 5px; }
+    .hist-group:first-child { padding-top: 4px; }
+    .session-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid transparent; }
+    .session-item:hover { background: var(--panel-2); }
+    .session-item.active { background: var(--panel-2); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+    .session-item .si-badge { flex-shrink: 0; font-size: 10px; padding: 2px 7px; border-radius: 6px; font-weight: 500; }
+    .session-item .si-badge.map { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+    .session-item .si-badge.form { background: color-mix(in srgb, var(--accent-2) 20%, transparent); color: var(--accent-2); }
+    .session-item .si-badge.data { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+    .session-item .si-main { flex: 1; min-width: 0; }
+    .session-item .si-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .session-item .si-preview { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .session-item .si-trail { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .session-item .si-time { font-size: 11px; color: var(--muted); }
+    .session-item .si-del { opacity: 0; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: none; border: none; cursor: pointer; font-size: 12px; color: var(--muted); }
+    .session-item:hover .si-del { opacity: .7; }
+    .session-item .si-del:hover { opacity: 1; color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+    .hint { position: fixed; bottom: 12px; left: calc(50% - 202px); transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 7px 16px; font-size: 12px; color: var(--muted); z-index: 2000; box-shadow: var(--shadow); }
+
+    @media (max-width: 960px) {
+      .sidebar { width: 56px; }
+      .sidebar .sb-brand, .sidebar .sb-new-chat .sb-lbl,
+      .sidebar .sb-section-label, .sidebar .sb-nav-item .sb-lbl,
+      .sidebar .sb-footer .pill, .sidebar .session-item .si-main,
+      .sidebar .session-item .si-trail { display: none; }
+      .sidebar .sb-body { padding: 8px 6px; }
+      .sidebar .sb-new-chat { justify-content: center; padding: 8px; }
+      .sidebar .sb-nav-item { justify-content: center; padding: 8px; }
+      .copilot { width: 340px; }
+      .hint { display: none; }
+    }
+  </style>
+</head>
+<body data-theme="dark">
+  <nav class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <div class="sb-logo">M</div>
+      <span class="sb-brand">movk-studio</span>
+      <button class="sb-collapse" id="sbCollapse" title="折叠侧栏">⊣</button>
+    </div>
+    <div class="sb-body">
+      <button class="sb-new-chat" id="newSidebarChat">＋ <span class="sb-lbl">新建会话</span></button>
+      <div class="sb-section-label">工作区</div>
+      <div id="tabs">
+        <div class="sb-nav-item active" data-mod="map">🗺 <span class="sb-lbl">地图</span></div>
+        <div class="sb-nav-item" data-mod="form">📝 <span class="sb-lbl">表单</span></div>
+        <div class="sb-nav-item" data-mod="data">📊 <span class="sb-lbl">数据</span></div>
+      </div>
+      <div class="sb-section-label">历史会话</div>
+      <div id="sessionList"></div>
+    </div>
+    <div class="sb-footer">
+      <div class="pill"><span class="dot"></span> <span class="sb-lbl">GPT-4o ▾</span></div>
+      <button class="sb-icon-btn" id="themeBtn" title="切换主题">◐</button>
+      <button class="sb-icon-btn" title="设置">⚙</button>
+    </div>
+  </nav>
+
+  <main>
+    <!-- 舞台区 -->
+    <div class="stage">
+      <div class="stage-bar">
+        <div class="st-title" id="stTitle">🗺 地图工作区</div>
+        <div class="st-sub" id="stSub">@movk/mapbox · 声明式 Mapbox GL</div>
+        <div class="st-actions" id="stActions"></div>
+      </div>
+      <div class="stage-body">
+        <!-- 地图 -->
+        <div class="view active" id="view-map">
+          <div id="map"></div>
+          <div class="map-mask"></div>
+          <div class="badge-3d" id="badge3d">2D · 平面视角</div>
+          <div class="state-panel">
+            <h4>图层 / 状态（Shared State）</h4>
+            <div class="state-row"><span class="sw"></span> 底图 OSM <span class="count">默认</span></div>
+            <div class="state-row" id="rowTianditu" style="opacity:.4"><span class="sw off"></span> 天地图影像 <span class="count">未加载</span></div>
+            <div class="state-row"><span class="sw" style="background:var(--warn)"></span> 标注 <span class="count" id="markerCount">0</span></div>
+            <div class="state-row" style="opacity:.4"><span class="sw off"></span> 绘制要素 <span class="count">0</span></div>
+          </div>
+        </div>
+
+        <!-- 表单 -->
+        <div class="view" id="view-form">
+          <div class="form-view">
+            <div class="form-card">
+              <h2 id="formTitle">表单预览</h2>
+              <div class="desc" id="formDesc">让 Copilot 用自然语言生成 Schema（@movk/nuxt AutoForm，Zod v4 驱动）</div>
+              <form id="formFields" autocomplete="off">
+                <div class="form-empty" id="formEmpty">尚未生成表单 — 试试右侧「生成用户注册表单」</div>
+              </form>
+              <div class="form-actions" id="formActionsBar" style="display:none">
+                <button type="button" class="btn primary" id="formSubmit">提交</button>
+                <button type="button" class="btn" id="formReset">重置</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 数据表 -->
+        <div class="view" id="view-data">
+          <div class="data-view">
+            <div class="table-toolbar">
+              <div id="filterChips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+              <div class="table-meta" id="tableMeta">共 8 行</div>
+            </div>
+            <table class="data">
+              <thead>
+                <tr>
+                  <th data-key="id">ID</th>
+                  <th data-key="name">姓名</th>
+                  <th data-key="role">角色</th>
+                  <th data-key="status">状态</th>
+                  <th data-key="created">创建时间</th>
+                </tr>
+              </thead>
+              <tbody id="dataBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Copilot 面板 -->
+    <aside class="copilot">
+      <div class="copilot-head">
+        <span class="ai">🤖</span> Copilot
+        <span class="status"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block"></span> 就绪</span>
+      </div>
+
+      <div class="messages" id="messages"></div>
+
+      <div class="prompt">
+        <div class="suggestions" id="suggestions"></div>
+        <div class="input-box">
+          <textarea id="input" rows="1" placeholder="输入指令，让 AI 操作当前模块…"></textarea>
+          <button class="send" id="sendBtn">↑</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div class="hint">原型演示：切换顶部模块，点击建议气泡，观察 AI 驱动左侧工作区</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    /* ══════════ 通用工具 ══════════ */
+    const $ = id => document.getElementById(id);
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const messagesEl = $('messages'), inputEl = $('input'), sendBtn = $('sendBtn');
+    let busy = false;
+    const scrollDown = () => messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    function addUser(text) {
+      const el = document.createElement('div'); el.className = 'msg user';
+      el.innerHTML = '<div class="avatar">👤</div><div class="msg-col"><div class="bubble"></div></div>';
+      el.querySelector('.bubble').textContent = text; messagesEl.appendChild(el); scrollDown();
+    }
+    function addAI() {
+      const el = document.createElement('div'); el.className = 'msg ai';
+      el.innerHTML = '<div class="avatar">🤖</div><div class="msg-col"></div>';
+      messagesEl.appendChild(el); scrollDown(); return el.querySelector('.msg-col');
+    }
+    function bubble(col, html) { const b = document.createElement('div'); b.className = 'bubble'; b.innerHTML = html; col.appendChild(b); scrollDown(); return b; }
+    function genCard(col, html) { const c = document.createElement('div'); c.className = 'gen-card'; c.innerHTML = html; col.appendChild(c); scrollDown(); return c; }
+    function toolSteps(col, steps) {
+      const wrap = document.createElement('div'); wrap.className = 'tool-steps';
+      steps.forEach(s => { const r = document.createElement('div'); r.className = 'step'; r.innerHTML = `<span class="ic wait"></span><span>调用 <code>${s.tool}</code> ${s.label || ''}</span>`; wrap.appendChild(r); s._el = r; });
+      col.appendChild(wrap); scrollDown();
+      return { async run(i, fn) { const ic = steps[i]._el.querySelector('.ic'); ic.className = 'ic run'; await sleep(420); if (fn) await fn(); ic.className = 'ic ok'; ic.textContent = '✓'; scrollDown(); } };
+    }
+    async function hitlConfirm(col, title, detail) {
+      const c = document.createElement('div'); c.className = 'confirm';
+      c.innerHTML = `<div class="ct">⚠ 确认操作</div><p>${title}<br><small>${detail}</small></p><div class="row"><button class="mini-btn btn-ghost" data-a="cancel">取消</button><button class="mini-btn btn-danger" data-a="ok">确认执行</button></div>`;
+      col.appendChild(c); scrollDown();
+      return new Promise(res => {
+        c.querySelector('[data-a=ok]').onclick = () => { c.querySelector('.row').innerHTML = '<small style="color:var(--ok)">✓ 已批准</small>'; res(true); };
+        c.querySelector('[data-a=cancel]').onclick = () => { c.querySelector('.row').innerHTML = '<small style="color:var(--muted)">操作已取消</small>'; res(false); };
+      });
+    }
+
+    /* ══════════ 地图模块（@movk/mapbox）══════════ */
+    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([34.5, 108.9], 4);
+    const baseDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19 });
+    const baseLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19 });
+    baseDark.addTo(map); L.control.zoom({ position: 'bottomright' }).addTo(map);
+    let tiandituLayer = null; const markers = [];
+    const updateMarkerCount = () => $('markerCount').textContent = markers.length;
+    const mapTools = {
+      async flyTo(lng, lat, z) { map.flyTo([lat, lng], z || 13, { duration: 1.5 }); await sleep(1500); },
+      async addMarker(lng, lat, label, color = '#ffb454') { const m = L.circleMarker([lat, lng], { radius: 8, color, fillColor: color, fillOpacity: .9, weight: 2 }).addTo(map).bindTooltip(label, { permanent: true, direction: 'top', offset: [0, -8] }); markers.push(m); updateMarkerCount(); },
+      async addTianditu() { if (!tiandituLayer) { tiandituLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', opacity: .55 }).addTo(map); const row = $('rowTianditu'); row.style.opacity = '1'; row.querySelector('.sw').classList.remove('off'); row.querySelector('.count').textContent = '已加载'; } },
+      async toggle3D() { const b = $('badge3d'), on = b.textContent.includes('3D'); b.textContent = on ? '2D · 平面视角' : '3D · 倾斜 60°'; const el = $('map'); el.style.transition = 'transform .8s'; el.style.transform = on ? 'none' : 'perspective(1200px) rotateX(18deg) scale(1.15)'; await sleep(800); },
+      async clearMarkers() { markers.forEach(m => map.removeLayer(m)); markers.length = 0; updateMarkerCount(); }
+    };
+    const mapScenarios = {
+      async shanghai(col) {
+        bubble(col, '好的，正在为你执行三步操作：');
+        const t = toolSteps(col, [{ tool: 'map.flyTo', label: '(上海)' }, { tool: 'map.addMarker', label: '(外滩)' }, { tool: 'map.addLayer', label: '(天地图影像)' }]);
+        await t.run(0, () => mapTools.flyTo(121.49, 31.24, 13));
+        await t.run(1, () => mapTools.addMarker(121.4905, 31.2417, '外滩'));
+        await t.run(2, () => mapTools.addTianditu());
+        genCard(col, '<div class="gc-head">📍 上海 · 外滩</div><div class="gc-body">坐标 <span class="coord">121.4905, 31.2417</span><br>已叠加天地图影像图层</div><div class="gc-actions"><button class="mini-btn">重新定位</button><button class="mini-btn">删除标注</button></div>');
+        bubble(col, '已飞抵上海外滩并完成标注与影像叠加。还需要查询周边要素或量算距离吗？');
+      },
+      async poi(col) {
+        bubble(col, '正在查询当前视野内的 POI：');
+        const t = toolSteps(col, [{ tool: 'map.queryFeatures', label: '(当前视野)' }]);
+        await t.run(0, async () => { [[121.4955, 31.2390, '南京东路'], [121.4870, 31.2445, '陈毅广场'], [121.5010, 31.2360, '豫园']].forEach(p => mapTools.addMarker(p[0], p[1], p[2], '#5b9dff')); });
+        genCard(col, '<div class="gc-head">🔍 查询到 3 个要素</div><div class="feat-list"><div class="feat-item">🏙 南京东路 <span class="tag">商业区</span></div><div class="feat-item">🟩 陈毅广场 <span class="tag">广场</span></div><div class="feat-item">🏯 豫园 <span class="tag">景点</span></div></div>');
+        bubble(col, '点击列表项可在地图上定位。要我量算任意两点的距离吗？');
+      },
+      async d3(col) { bubble(col, '正在切换视角：'); const t = toolSteps(col, [{ tool: 'map.toggle3D' }]); await t.run(0, () => mapTools.toggle3D()); bubble(col, '已切换 3D 倾斜视角。'); },
+      async clear(col) {
+        if (markers.length === 0) { bubble(col, '当前没有任何标注可删除。'); return; }
+        const ok = await hitlConfirm(col, `AI 想要：<b>清空当前全部标注（${markers.length} 个）</b>`, '此操作不可撤销');
+        if (ok) { await mapTools.clearMarkers(); bubble(col, '已清空全部标注。'); } else bubble(col, '好的，已取消删除。');
+      }
+    };
+
+    /* ══════════ 表单模块（@movk/nuxt AutoForm）══════════ */
+    const formState = { fields: [], values: {} };
+    const FIELD_LIB = {
+      username: { label: '用户名', type: 'text', required: true, hint: '4–16 位字母或数字' },
+      email: { label: '邮箱', type: 'email', required: true },
+      password: { label: '密码', type: 'password', required: true, hint: '至少 8 位' },
+      phone: { label: '手机号', type: 'tel', required: false, hint: '11 位手机号' },
+      role: { label: '角色', type: 'select', required: true, options: ['管理员', '编辑', '访客'] },
+      bio: { label: '个人简介', type: 'textarea', required: false }
+    };
+    function renderForm() {
+      const wrap = $('formFields');
+      if (!formState.fields.length) { wrap.innerHTML = '<div class="form-empty" id="formEmpty">尚未生成表单 — 试试右侧「生成用户注册表单」</div>'; $('formActionsBar').style.display = 'none'; return; }
+      wrap.innerHTML = '';
+      formState.fields.forEach(key => {
+        const f = FIELD_LIB[key]; if (!f) return;
+        const d = document.createElement('div'); d.className = 'field'; d.dataset.key = key;
+        const control = f.type === 'select'
+          ? `<select class="control">${(f.options || []).map(o => `<option>${o}</option>`).join('')}</select>`
+          : f.type === 'textarea' ? '<textarea class="control" rows="3"></textarea>'
+          : `<input class="control" type="${f.type}" />`;
+        d.innerHTML = `<label>${f.label}${f.required ? '<span class="req">*</span>' : ''}</label>${control}${f.hint ? `<div class="hint-text">${f.hint}</div>` : ''}<div class="err">此字段为必填项</div>`;
+        const c = d.querySelector('.control'); c.value = formState.values[key] || ''; c.addEventListener('input', () => { formState.values[key] = c.value; d.classList.remove('invalid'); });
+        wrap.appendChild(d);
+      });
+      $('formActionsBar').style.display = 'flex';
+    }
+    const formTools = {
+      async generate(title, desc, fields) { $('formTitle').textContent = title; $('formDesc').textContent = desc; formState.fields = fields; formState.values = {}; renderForm(); },
+      async addField(key) { if (!formState.fields.includes(key)) formState.fields.push(key); renderForm(); },
+      async fillSample(sample) { formState.values = { ...formState.values, ...sample }; renderForm(); },
+      async validate() { let bad = 0; document.querySelectorAll('#formFields .field').forEach(d => { const f = FIELD_LIB[d.dataset.key]; if (f && f.required && !(formState.values[d.dataset.key] || '').trim()) { d.classList.add('invalid'); bad++; } }); return bad; }
+    };
+    const formScenarios = {
+      async generate(col) {
+        bubble(col, '正在根据需求生成表单 Schema：');
+        const t = toolSteps(col, [{ tool: 'form.generateSchema', label: '(用户注册)' }, { tool: 'form.render' }]);
+        await t.run(0, () => sleep(300));
+        genCard(col, '<div class="gc-head" style="font-family:ui-monospace">📐 Zod Schema</div><div class="schema-card"><div class="sc-head">userSchema · @movk/nuxt</div><pre>z.object({\n  <span class="k">username</span>: z.string().min(<span class="s">4</span>).max(<span class="s">16</span>),\n  <span class="k">email</span>: z.string().email(),\n  <span class="k">password</span>: z.string().min(<span class="s">8</span>),\n  <span class="k">role</span>: z.enum([<span class="s">"管理员"</span>,<span class="s">"编辑"</span>,<span class="s">"访客"</span>])\n})</pre></div>');
+        await t.run(1, () => formTools.generate('用户注册', '由 AI 生成 · 4 个字段', ['username', 'email', 'password', 'role']));
+        bubble(col, '已生成「用户注册」表单。我可以继续添加字段、填充示例数据或执行校验。');
+      },
+      async addPhone(col) {
+        if (!formState.fields.length) { bubble(col, '请先生成一个表单。'); return; }
+        bubble(col, '正在新增手机号字段并设为必填：');
+        const t = toolSteps(col, [{ tool: 'form.addField', label: '(phone, required)' }]);
+        FIELD_LIB.phone.required = true;
+        await t.run(0, () => formTools.addField('phone'));
+        bubble(col, '已添加「手机号」字段（必填）。');
+      },
+      async fill(col) {
+        if (!formState.fields.length) { bubble(col, '请先生成一个表单。'); return; }
+        bubble(col, '正在填充示例数据：');
+        const t = toolSteps(col, [{ tool: 'form.setValues' }]);
+        await t.run(0, () => formTools.fillSample({ username: 'movk_admin', email: 'admin@movk.dev', password: 'movk12345', phone: '13800138000', role: '管理员' }));
+        genCard(col, '<div class="gc-head">✨ 已填充示例数据</div><div class="gc-body">username=movk_admin · email=admin@movk.dev · role=管理员</div>');
+        bubble(col, '示例数据已填入表单，可直接点击「提交」体验校验。');
+      },
+      async validate(col) {
+        if (!formState.fields.length) { bubble(col, '请先生成一个表单。'); return; }
+        bubble(col, '正在执行表单校验：');
+        const t = toolSteps(col, [{ tool: 'form.validate' }]);
+        let bad = 0; await t.run(0, async () => { bad = await formTools.validate(); });
+        if (bad === 0) genCard(col, '<div class="gc-head" style="color:var(--ok)">✓ 校验通过</div><div class="gc-body">全部必填字段已填写，数据符合 Schema 约束。</div>');
+        else genCard(col, `<div class="gc-head" style="color:var(--danger)">✕ 校验未通过</div><div class="gc-body">有 ${bad} 个必填字段为空（已在表单中高亮）。</div>`);
+        bubble(col, bad === 0 ? '校验通过，可以提交了。' : '请补全高亮的必填字段后再提交。');
+      }
+    };
+
+    /* ══════════ 数据表模块（@movk/nuxt DataTable）══════════ */
+    const DATA = [
+      { id: 1, name: '陈明', role: '管理员', status: 'active', created: '2026-01-12' },
+      { id: 2, name: '李华', role: '编辑', status: 'active', created: '2026-02-03' },
+      { id: 3, name: '王芳', role: '访客', status: 'inactive', created: '2026-02-18' },
+      { id: 4, name: '赵磊', role: '编辑', status: 'pending', created: '2026-03-05' },
+      { id: 5, name: '刘洋', role: '访客', status: 'active', created: '2026-03-22' },
+      { id: 6, name: '孙婷', role: '管理员', status: 'inactive', created: '2026-04-10' },
+      { id: 7, name: '周杰', role: '编辑', status: 'active', created: '2026-05-01' },
+      { id: 8, name: '吴敏', role: '访客', status: 'pending', created: '2026-05-19' }
+    ];
+    const tableState = { filters: [], sort: null };
+    const STATUS_LABEL = { active: '活跃', inactive: '停用', pending: '待审' };
+    function renderTable() {
+      let rows = DATA.filter(r => tableState.filters.every(f => r[f.key] === f.val));
+      if (tableState.sort) { const { key, dir } = tableState.sort; rows = [...rows].sort((a, b) => (a[key] > b[key] ? 1 : -1) * (dir === 'asc' ? 1 : -1)); }
+      $('dataBody').innerHTML = rows.map(r => `<tr><td>${r.id}</td><td>${r.name}</td><td>${r.role}</td><td><span class="status-tag ${r.status}">${STATUS_LABEL[r.status]}</span></td><td>${r.created}</td></tr>`).join('');
+      $('tableMeta').textContent = `共 ${rows.length} 行` + (tableState.filters.length ? ` · 已筛选` : '');
+      $('filterChips').innerHTML = tableState.filters.map((f, i) => `<span class="filter-chip">${f.label}<span class="x" data-i="${i}">✕</span></span>`).join('') + (tableState.sort ? `<span class="filter-chip">排序: ${tableState.sort.label}<span class="x" data-sort="1">✕</span></span>` : '');
+      $('filterChips').querySelectorAll('[data-i]').forEach(x => x.onclick = () => { tableState.filters.splice(+x.dataset.i, 1); renderTable(); });
+      const ss = $('filterChips').querySelector('[data-sort]'); if (ss) ss.onclick = () => { tableState.sort = null; renderTable(); };
+      document.querySelectorAll('table.data th').forEach(th => th.querySelector('.arrow')?.remove());
+      if (tableState.sort) { const th = document.querySelector(`th[data-key="${tableState.sort.key}"]`); if (th) th.insertAdjacentHTML('beforeend', ` <span class="arrow">${tableState.sort.dir === 'asc' ? '▲' : '▼'}</span>`); }
+    }
+    document.querySelectorAll('table.data th').forEach(th => th.onclick = () => { const key = th.dataset.key; const dir = tableState.sort && tableState.sort.key === key && tableState.sort.dir === 'asc' ? 'desc' : 'asc'; tableState.sort = { key, dir, label: th.textContent.trim() + (dir === 'asc' ? ' ↑' : ' ↓') }; renderTable(); });
+    const tableScenarios = {
+      async filterActive(col) {
+        bubble(col, '正在按状态筛选：');
+        const t = toolSteps(col, [{ tool: 'table.filter', label: "(status = active)" }]);
+        await t.run(0, () => { if (!tableState.filters.some(f => f.key === 'status')) tableState.filters.push({ key: 'status', val: 'active', label: '状态 = 活跃' }); renderTable(); });
+        const n = DATA.filter(r => r.status === 'active').length;
+        bubble(col, `已筛选出 ${n} 位活跃用户。需要再按角色细分或导出吗？`);
+      },
+      async sortDesc(col) {
+        bubble(col, '正在按创建时间倒序排列：');
+        const t = toolSteps(col, [{ tool: 'table.sort', label: '(created, desc)' }]);
+        await t.run(0, () => { tableState.sort = { key: 'created', dir: 'desc', label: '创建时间 ↓' }; renderTable(); });
+        bubble(col, '已按创建时间从新到旧排序。');
+      },
+      async aggregate(col) {
+        bubble(col, '正在统计各状态分布：');
+        const t = toolSteps(col, [{ tool: 'table.aggregate', label: '(group by status)' }]);
+        await t.run(0, () => sleep(300));
+        const counts = { active: 0, inactive: 0, pending: 0 }; DATA.forEach(r => counts[r.status]++);
+        const max = Math.max(...Object.values(counts));
+        const bars = Object.entries(counts).map(([k, v]) => `<div class="bar-row"><span class="bl">${STATUS_LABEL[k]}</span><span class="bt"><span class="bf" style="width:0"></span></span><span class="bv">${v}</span></div>`).join('');
+        const c = genCard(col, `<div class="chart-card"><div class="cc-title">📊 状态分布统计</div>${bars}</div>`);
+        await sleep(50); c.querySelectorAll('.bf').forEach((bf, i) => bf.style.width = (Object.values(counts)[i] / max * 100) + '%');
+        bubble(col, '统计完成：活跃 4、停用 2、待审 2。');
+      },
+      async exportCsv(col) {
+        bubble(col, '准备导出当前结果：');
+        const ok = await hitlConfirm(col, 'AI 想要：<b>导出当前表格为 CSV 文件</b>', '将下载到本地');
+        if (!ok) { bubble(col, '已取消导出。'); return; }
+        const t = toolSteps(col, [{ tool: 'table.export', label: '(csv)' }]); await t.run(0, () => sleep(400));
+        genCard(col, '<div class="gc-head">📄 导出完成</div><div class="gc-body">users_export.csv · 已生成（原型中为模拟）</div>');
+        bubble(col, '已导出当前筛选结果。');
+      }
+    };
+
+    /* ══════════ 模块路由 ══════════ */
+    const MODULES = {
+      map: {
+        title: '🗺 地图工作区', sub: '@movk/mapbox · 声明式 Mapbox GL',
+        greeting: '你好，我是地图 Copilot。我可以直接操作下方地图——飞行定位、标注、叠加图层、查询要素。',
+        suggestions: [['shanghai', '飞到上海并标注外滩，叠加天地图影像'], ['poi', '这附近有哪些 POI？'], ['d3', '切换 3D 倾斜视角'], ['clear', '删除所有标注']],
+        scenarios: mapScenarios,
+        match: t => t.includes('上海') ? 'shanghai' : /poi/i.test(t) ? 'poi' : /3d|三维|倾斜/i.test(t) ? 'd3' : (t.includes('删除') || t.includes('清空')) ? 'clear' : null
+      },
+      form: {
+        title: '📝 表单工作区', sub: '@movk/nuxt AutoForm · Zod v4 Schema 驱动',
+        greeting: '你好，我是表单 Copilot。用自然语言描述表单需求，我会生成 Zod Schema 并渲染、填充、校验。',
+        suggestions: [['generate', '生成一个用户注册表单'], ['addPhone', '添加手机号字段并设为必填'], ['fill', '填充示例数据'], ['validate', '校验当前表单']],
+        scenarios: formScenarios,
+        match: t => t.includes('生成') || t.includes('注册') ? 'generate' : t.includes('手机') ? 'addPhone' : (t.includes('填充') || t.includes('示例')) ? 'fill' : t.includes('校验') ? 'validate' : null
+      },
+      data: {
+        title: '📊 数据工作区', sub: '@movk/nuxt DataTable · 查询 / 排序 / 聚合',
+        greeting: '你好，我是数据表 Copilot。用自然语言筛选、排序、统计与导出表格数据。',
+        suggestions: [['filterActive', '筛选出状态为活跃的用户'], ['sortDesc', '按创建时间倒序'], ['aggregate', '统计各状态数量'], ['exportCsv', '导出当前结果']],
+        scenarios: tableScenarios,
+        match: t => t.includes('筛选') || t.includes('活跃') ? 'filterActive' : t.includes('排序') || t.includes('倒序') ? 'sortDesc' : t.includes('统计') || t.includes('聚合') ? 'aggregate' : t.includes('导出') ? 'exportCsv' : null
+      }
+    };
+    let activeMod = 'map';
+
+    function applyModuleUI() {
+      const m = MODULES[activeMod];
+      $('stTitle').textContent = m.title; $('stSub').textContent = m.sub;
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      $('view-' + activeMod).classList.add('active');
+      document.querySelectorAll('#tabs .sb-nav-item').forEach(t => t.classList.toggle('active', t.dataset.mod === activeMod));
+      $('suggestions').innerHTML = m.suggestions.map(([cmd, label]) => `<span class="sug" data-cmd="${cmd}">${label}</span>`).join('');
+      if (activeMod === 'map') setTimeout(() => map.invalidateSize(), 50);
+    }
+    function switchModule(mod) {
+      if (mod === activeMod) return;
+      activeMod = mod; applyModuleUI();
+      const col = addAI(); bubble(col, `已切换到 <b>${MODULES[mod].title.replace(/^.. /, '')}</b>。${MODULES[mod].greeting.split('。')[1] || ''}`);
+      snapshot();
+    }
+    document.querySelectorAll('#tabs .sb-nav-item').forEach(t => t.onclick = () => switchModule(t.dataset.mod));
+
+    /* ══════════ 对话调度 ══════════ */
+    async function handle(cmd, text) {
+      if (busy) return; busy = true; sendBtn.disabled = true;
+      addUser(text); await sleep(380);
+      const fn = MODULES[activeMod].scenarios[cmd];
+      const col = addAI();
+      if (fn) await fn(col);
+      else bubble(col, '这是 UI 原型，已脚本化当前模块的若干指令，请点击上方建议气泡体验完整交互。');
+      busy = false; sendBtn.disabled = false; snapshot();
+    }
+    $('suggestions').addEventListener('click', e => { const s = e.target.closest('.sug'); if (s) handle(s.dataset.cmd, s.textContent); });
+    function freeSend() {
+      const text = inputEl.value.trim(); if (!text || busy) return; inputEl.value = '';
+      const cmd = MODULES[activeMod].match(text);
+      handle(cmd || 'unknown', text);
+    }
+    sendBtn.onclick = freeSend;
+    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); freeSend(); } });
+    $('formSubmit')?.addEventListener('click', async () => { const bad = await formTools.validate(); alert(bad === 0 ? '提交成功（原型模拟）' : `还有 ${bad} 个必填项未填写`); });
+    $('formReset')?.addEventListener('click', () => { formState.values = {}; renderForm(); });
+
+    /* ══════════ 会话历史（localStorage 持久化）══════════ */
+    const LS_KEY = 'movk-studio-sessions';
+    const sessionList = $('sessionList');
+    let sessions = [], currentId = null;
+    const persist = () => localStorage.setItem(LS_KEY, JSON.stringify(sessions));
+    const fmtTime = t => { const d = new Date(t), n = new Date(); return d.toDateString() === n.toDateString() ? d.toTimeString().slice(0, 5) : `${d.getMonth() + 1}/${d.getDate()}`; };
+    const MOD_BADGE = { map: '地图', form: '表单', data: '数据' };
+
+    function freshGreeting() { const col = addAI(); bubble(col, MODULES[activeMod].greeting + '试试下面的建议指令 👇'); }
+    function snapshot() {
+      const s = sessions.find(x => x.id === currentId); if (!s) return;
+      s.html = messagesEl.innerHTML; s.time = Date.now(); s.mod = activeMod;
+      const fu = messagesEl.querySelector('.msg.user .bubble'); if (fu && s.title === '新会话') s.title = fu.textContent.slice(0, 20);
+      const bs = messagesEl.querySelectorAll('.bubble'); s.preview = bs.length ? bs[bs.length - 1].textContent.slice(0, 30) : '';
+      persist(); renderList();
+    }
+    function newSession() { snapshot(); messagesEl.innerHTML = ''; freshGreeting(); const s = { id: 'c' + Date.now(), title: '新会话', preview: '', time: Date.now(), mod: activeMod, html: messagesEl.innerHTML }; sessions.unshift(s); currentId = s.id; persist(); renderList(); }
+    function switchSession(id) { snapshot(); const s = sessions.find(x => x.id === id); if (!s) return; currentId = id; if (s.mod && s.mod !== activeMod) { activeMod = s.mod; applyModuleUI(); } messagesEl.innerHTML = s.html; scrollDown(); renderList(); }
+    function deleteSession(id, ev) { ev.stopPropagation(); sessions = sessions.filter(x => x.id !== id); persist(); if (currentId === id) { if (sessions.length) switchSession(sessions[0].id); else newSession(); return; } renderList(); }
+    const isToday = t => new Date(t).toDateString() === new Date().toDateString();
+    function sessionItem(s) {
+      const item = document.createElement('div'); item.className = 'session-item' + (s.id === currentId ? ' active' : '');
+      item.innerHTML = `<span class="si-badge ${s.mod || ''}"></span><div class="si-main"><div class="si-title"></div><div class="si-preview"></div></div><div class="si-trail"><span class="si-time"></span><button class="si-del" title="删除">🗑</button></div>`;
+      item.querySelector('.si-badge').textContent = MOD_BADGE[s.mod] || '—';
+      item.querySelector('.si-title').textContent = s.title;
+      item.querySelector('.si-preview').textContent = s.preview || '—';
+      item.querySelector('.si-time').textContent = fmtTime(s.time);
+      item.onclick = () => switchSession(s.id);
+      item.querySelector('.si-del').onclick = e => deleteSession(s.id, e);
+      return item;
+    }
+    function renderList() {
+      sessionList.innerHTML = '';
+      if (!sessions.length) { sessionList.innerHTML = '<div class="empty">暂无历史会话</div>'; return; }
+      const today = sessions.filter(s => isToday(s.time)), earlier = sessions.filter(s => !isToday(s.time));
+      [['今天', today], ['更早', earlier]].forEach(([label, list]) => {
+        if (!list.length) return;
+        const g = document.createElement('div'); g.className = 'hist-group'; g.textContent = label; sessionList.appendChild(g);
+        list.forEach(s => sessionList.appendChild(sessionItem(s)));
+      });
+    }
+    $('newSidebarChat').onclick = newSession;
+    $('sbCollapse').onclick = () => $('sidebar').classList.toggle('collapsed');
+
+    /* ══════════ 初始化 ══════════ */
+    applyModuleUI(); renderTable();
+    try { sessions = JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { sessions = []; }
+    if (sessions.length) { currentId = sessions[0].id; if (sessions[0].mod) { activeMod = sessions[0].mod; applyModuleUI(); } messagesEl.innerHTML = sessions[0].html; }
+    else { freshGreeting(); const s = { id: 'c' + Date.now(), title: '新会话', preview: '', time: Date.now(), mod: activeMod, html: messagesEl.innerHTML }; sessions.unshift(s); currentId = s.id; persist(); }
+    renderList();
+
+    $('themeBtn').onclick = () => { const b = document.body, dark = b.dataset.theme === 'dark'; b.dataset.theme = dark ? 'light' : 'dark'; if (dark) { map.removeLayer(baseDark); baseLight.addTo(map); } else { map.removeLayer(baseLight); baseDark.addTo(map); } };
+  </script>
+</body>
+</html>
