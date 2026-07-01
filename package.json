@@ -4,13 +4,15 @@
   "type": "module",
   "scripts": {
     "build": "nuxt build",
-    "dev": "nuxt dev",
+    "dev": "nuxt dev --port 3100",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "typecheck": "nuxt typecheck",
-    "clean": "movk-clean"
+    "clean": "movk-clean",
+    "db:generate": "nuxt db generate",
+    "db:migrate": "nuxt db migrate"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.114",
@@ -20,14 +22,18 @@
     "@movk/mapbox": "^1.0.0",
     "@movk/nuxt": "^1.4.2",
     "@nuxt/ui": "^4.9.0",
+    "@nuxthub/core": "^0.10.7",
+    "drizzle-orm": "^0.45.2",
     "mapbox-gl": "^3.25.0",
     "nuxt": "^4.4.8",
+    "postgres": "^3.4.9",
     "tailwindcss": "^4.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.16.0",
     "@types/node": "^26.0.1",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^10.6.0",
     "typescript": "^6.0.3",
     "vue-tsc": "^3.3.5"
