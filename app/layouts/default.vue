@@ -1,6 +1,8 @@
 <script lang="ts" setup>
 import type { NavigationMenuItem } from '@nuxt/ui'
 
+const { loggedIn, openInPopup } = useUserSession()
+
 const sidebarOpen = ref(true)
 const searchOpen = ref(false)
 
@@ -24,9 +26,7 @@ const items: NavigationMenuItem[] = [
       :min-size="14"
       collapsible
       resizable
-      :ui="{
-        footer: 'lg:border-t lg:border-default'
-      }"
+      class="border-r-0 py-4 dark:[--ui-bg-elevated:var(--ui-color-neutral-900)]"
     >
       <template #header="{ collapsed }">
         <AppLogo v-if="!collapsed" class="h-6 w-auto shrink-0" />
@@ -59,20 +59,23 @@ const items: NavigationMenuItem[] = [
       </template>
 
       <template #footer="{ collapsed }">
-        <UserMenu :collapsed="collapsed" />
-
+        <UserMenu v-if="loggedIn" :collapsed="collapsed" />
         <UButton
+          v-else
           :label="collapsed ? '' : '使用 GitHub 登录'"
           icon="i-simple-icons-github"
           color="neutral"
           variant="ghost"
           class="w-full"
+          @click="openInPopup('/auth/github')"
         />
       </template>
     </UDashboardSidebar>
 
     <UDashboardSearch v-model:open="searchOpen" placeholder="搜索对话..." :groups="[]" />
 
-    <slot />
+    <div class="flex-1 flex m-4 lg:ml-0 rounded-lg ring ring-default bg-default/75 shadow min-w-0 overflow-hidden">
+      <slot />
+    </div>
   </UDashboardGroup>
 </template>
