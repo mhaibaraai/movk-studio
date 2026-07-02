@@ -22,7 +22,9 @@ export default defineNuxtConfig({
 
   hub: {
     db: {
-      dialect: 'postgresql'
+      dialect: 'postgresql',
+      driver: 'postgres-js',
+      applyMigrationsDuringBuild: false
     }
   },
 

@@ -53,11 +53,15 @@ jobs:
             -p "${{ secrets.DB_SSH_PORT }}" \
             "${{ secrets.DB_SSH_USER }}@${{ secrets.DB_SSH_HOST }}"
 
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@127.0.0.1:5432/${{ secrets.DB_NAME }}
+        run: pnpm db:migrate
+
       - name: Build
         env:
           NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
           NUXT_MAPBOX_TOKEN: ${{ secrets.NUXT_MAPBOX_TOKEN }}
-          DATABASE_URL: postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@127.0.0.1:5432/${{ secrets.DB_NAME }}
         run: pnpm build
 
       - name: Log in to GHCR
