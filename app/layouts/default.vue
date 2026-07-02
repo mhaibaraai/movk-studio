@@ -68,7 +68,6 @@ const items: NavigationMenuItem[] = [
       :min-size="14"
       collapsible
       resizable
-      class="border-r-0 py-4 dark:[--ui-bg-elevated:var(--ui-color-neutral-900)]"
     >
       <template #header="{ collapsed }">
         <AppLogo v-if="!collapsed" class="h-6 w-auto shrink-0" />
@@ -117,8 +116,6 @@ const items: NavigationMenuItem[] = [
 
     <UDashboardSearch v-model:open="searchOpen" placeholder="搜索对话..." :groups="[]" />
 
-    <div class="flex-1 flex m-4 lg:ml-0 rounded-lg ring ring-default bg-default/75 shadow min-w-0 overflow-hidden">
-      <slot />
-    </div>
+    <slot />
   </UDashboardGroup>
 </template>
