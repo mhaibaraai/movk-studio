@@ -1,10 +1,52 @@
 <script lang="ts" setup>
 import type { NavigationMenuItem } from '@nuxt/ui'
 
-const { loggedIn, openInPopup } = useUserSession()
+const { loggedIn, openInPopup, fetch: fetchSession } = useUserSession()
+const toast = useToast()
 
 const sidebarOpen = ref(true)
 const searchOpen = ref(false)
+const isLoggingIn = ref(false)
+
+let loginTimeoutId: ReturnType<typeof setTimeout> | undefined
+
+function onPopupStorageEvent(e: StorageEvent) {
+  if (e.key !== 'temp-nuxt-auth-utils-popup')
+    return
+
+  finishLogin()
+}
+
+async function finishLogin() {
+  window.removeEventListener('storage', onPopupStorageEvent)
+  if (loginTimeoutId) {
+    clearTimeout(loginTimeoutId)
+    loginTimeoutId = undefined
+  }
+
+  await fetchSession()
+
+  isLoggingIn.value = false
+
+  if (loggedIn.value) {
+    toast.add({ title: '登录成功', color: 'success', icon: 'i-lucide-circle-check' })
+  } else {
+    toast.add({ title: 'GitHub 登录未完成', description: '请重试', color: 'error', icon: 'i-lucide-circle-alert' })
+  }
+}
+
+function loginWithGithub() {
+  isLoggingIn.value = true
+  window.addEventListener('storage', onPopupStorageEvent)
+  loginTimeoutId = setTimeout(finishLogin, 120_000)
+  openInPopup('/auth/github')
+}
+
+onUnmounted(() => {
+  window.removeEventListener('storage', onPopupStorageEvent)
+  if (loginTimeoutId)
+    clearTimeout(loginTimeoutId)
+})
 
 const items: NavigationMenuItem[] = [
   [
@@ -67,7 +109,8 @@ const items: NavigationMenuItem[] = [
           color="neutral"
           variant="ghost"
           class="w-full"
-          @click="openInPopup('/auth/github')"
+          :loading="isLoggingIn"
+          @click="loginWithGithub"
         />
       </template>
     </UDashboardSidebar>
