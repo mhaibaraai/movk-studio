@@ -2,5 +2,5 @@
 </script>
 
 <template>
-  <div>home</div>
+  <Placeholder class="flex-1" />
 </template>

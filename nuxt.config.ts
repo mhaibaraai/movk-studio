@@ -9,7 +9,8 @@ export default defineNuxtConfig({
     '@movk/nuxt',
     '@comark/nuxt',
     '@movk/mapbox',
-    '@nuxthub/core'
+    '@nuxthub/core',
+    'nuxt-csurf'
   ],
 
   devtools: {
@@ -18,10 +19,6 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  routeRules: {
-    '/': { prerender: true }
-  },
-
   compatibilityDate: '2026-06-30',
 
   hub: {
@@ -29,6 +26,33 @@ export default defineNuxtConfig({
       dialect: 'postgresql',
       driver: 'postgres-js',
       applyMigrationsDuringBuild: false
+    }
+  },
+
+  vite: {
+    optimizeDeps: {
+      include: [
+        '@ai-sdk/vue',
+        '@shikijs/langs/c',
+        '@shikijs/langs/cpp',
+        '@shikijs/langs/css',
+        '@shikijs/langs/diff',
+        '@shikijs/langs/dockerfile',
+        '@shikijs/langs/go',
+        '@shikijs/langs/graphql',
+        '@shikijs/langs/html',
+        '@shikijs/langs/java',
+        '@shikijs/langs/kotlin',
+        '@shikijs/langs/php',
+        '@shikijs/langs/python',
+        '@shikijs/langs/ruby',
+        '@shikijs/langs/rust',
+        '@shikijs/langs/sql',
+        '@shikijs/langs/swift',
+        '@shikijs/langs/toml',
+        '@shikijs/langs/xml',
+        'ai'
+      ]
     }
   },
 

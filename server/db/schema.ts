@@ -26,10 +26,12 @@ export const chats = pgTable('chats', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   title: text('title'),
   userId: text('user_id').notNull(),
+  workspace: text('workspace', { enum: ['map', 'form', 'data'] }).notNull().default('map'),
   visibility: text('visibility', { enum: ['public', 'private'] }).notNull().default('private'),
   ...timestamps
 }, table => [
-  index('chats_user_id_idx').on(table.userId)
+  index('chats_user_id_idx').on(table.userId),
+  index('chats_workspace_idx').on(table.userId, table.workspace)
 ])
 
 export const chatsRelations = relations(chats, ({ one, many }) => ({
