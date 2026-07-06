@@ -35,6 +35,7 @@ const emit = defineEmits<{
 
     <template v-else-if="isTextUIPart(part) && part.text.length > 0">
       <ChatComark v-if="message.role === 'assistant'" :markdown="part.text" :streaming="isPartStreaming(part)" />
+
       <template v-else-if="message.role === 'user'">
         <ChatMessageEdit
           v-if="editing"
@@ -43,6 +44,7 @@ const emit = defineEmits<{
           @save="(msg, text) => emit('save', msg, text)"
           @cancel="emit('cancelEdit')"
         />
+
         <p v-else class="whitespace-pre-wrap text-sm/6">
           {{ part.text }}
         </p>
