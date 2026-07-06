@@ -65,6 +65,7 @@ const transport = new DefaultChatTransport<UIMessage>({
 })
 
 const { messages, status, error, sendMessage, regenerate, stop } = useChat({
+  id: chatId.value,
   transport,
   onError: (err) => {
     let message = err.message
@@ -83,7 +84,7 @@ const { messages, status, error, sendMessage, regenerate, stop } = useChat({
   }
 })
 
-// 会话切换：草稿清空消息，历史拉取并回显；末条为 user 时补生成 assistant
+// 会话切换：草稿清空消息，历史拉取并回显；仅当会话只有一条未回复的 user 消息（首次发送后被中断）时才自动续答
 watch(chatId, async (id, prev) => {
   if (id === prev) return
 
@@ -95,7 +96,7 @@ watch(chatId, async (id, prev) => {
   try {
     const chat = await $fetch<{ messages?: UIMessage[] }>(`/api/chats/${id}`)
     messages.value = chat.messages ?? []
-    if (messages.value.at(-1)?.role === 'user') {
+    if (messages.value.length === 1 && messages.value[0]?.role === 'user') {
       regenerate()
     }
   } catch {
@@ -129,6 +130,15 @@ function onSubmit() {
   send(input.value)
   input.value = ''
 }
+
+const promptRef = useTemplateRef('promptRef')
+watch(chatOpen, (value) => {
+  if (value) {
+    nextTick(() => {
+      promptRef.value?.textareaRef?.focus()
+    })
+  }
+})
 </script>
 
 <template>
@@ -160,6 +170,10 @@ function onSubmit() {
         class="px-0 gap-2"
         :user="{ ui: { container: 'max-w-full' } }"
       >
+        <template #indicator>
+          <ChatMessageIndicator />
+        </template>
+
         <template #content="{ message }">
           <ChatMessageContent :message="message" />
         </template>
@@ -181,6 +195,7 @@ function onSubmit() {
 
     <template #footer>
       <UChatPrompt
+        ref="promptRef"
         v-model="input"
         :error="error"
         class="[view-transition-name:chat-prompt]"
