@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import type { UIMessage } from 'ai'
+import type { Workspace } from '#shared/utils/workspace'
 import { DefaultChatTransport } from 'ai'
 import { useChat } from '@ai-sdk/vue'
 
@@ -11,13 +12,32 @@ const { chatOpen, workspace, isDraft, chatId, persistToUrl, newChat, refreshChat
 const { model } = useModels()
 const { csrf, headerName } = useCsrf()
 
-const quickChats = [
-  '什么是 MOVK？',
-  '飞到上海并标注外滩，叠加天地图影像',
-  '这附近有哪些 POI？',
-  '切换 3D 倾斜视角',
-  '删除所有标注'
-]
+const QUICK_CHATS: Record<Workspace, string[]> = {
+  global: [
+    'Movk Studio 能做什么？',
+    '地图、表单、数据三个工作区分别用于什么？',
+    '如何开始一个新项目？'
+  ],
+  map: [
+    '什么是 MOVK？',
+    '飞到上海并标注外滩，叠加天地图影像',
+    '这附近有哪些 POI？',
+    '切换 3D 倾斜视角',
+    '删除所有标注'
+  ],
+  form: [
+    '如何设计一个表单结构？',
+    '给字段添加校验规则',
+    '常见字段类型有哪些？'
+  ],
+  data: [
+    '如何查询和筛选数据？',
+    '把结果做成可视化图表',
+    '导出当前数据'
+  ]
+}
+
+const quickChats = computed(() => QUICK_CHATS[workspace.value])
 
 const ui = {
   prose: {
@@ -40,7 +60,7 @@ const transport = new DefaultChatTransport<UIMessage>({
   prepareSendMessagesRequest: ({ messages }) => ({
     api: `/api/chats/${chatId.value}`,
     headers: { [headerName]: csrf },
-    body: { messages, model: model.value, workspace: workspace.value }
+    body: { messages, model: model.value }
   })
 })
 
@@ -83,16 +103,26 @@ watch(chatId, async (id, prev) => {
   }
 }, { immediate: true })
 
-function send(text: string) {
+async function send(text: string) {
   const value = text.trim()
   if (!value) return
 
-  const wasDraft = isDraft.value
-  sendMessage({ text: value })
-
-  if (wasDraft) {
+  // 草稿首发：先建会话壳（POST /api/chats），再走流式（POST /api/chats/:id）
+  if (isDraft.value) {
+    try {
+      await $fetch('/api/chats', {
+        method: 'POST',
+        headers: { [headerName]: csrf },
+        body: { id: chatId.value, workspace: workspace.value }
+      })
+    } catch {
+      toast.add({ description: '创建会话失败', icon: 'i-lucide-circle-alert', color: 'error' })
+      return
+    }
     persistToUrl()
   }
+
+  sendMessage({ text: value })
 }
 
 function onSubmit() {

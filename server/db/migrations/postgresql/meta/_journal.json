@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1782874119683,
-      "tag": "0000_clumsy_luke_cage",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1782886584986,
-      "tag": "0001_glossy_thunderbird",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1783236436093,
-      "tag": "0002_dusty_maximus",
+      "when": 1783305948494,
+      "tag": "0000_wild_venus",
       "breakpoints": true
     }
   ]

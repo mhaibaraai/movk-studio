@@ -38,7 +38,7 @@ function submit() {
       <UButton label="保存" :disabled="!trimmed" @click="submit" />
       <UButton
         color="neutral"
-        variant="ghost"
+        variant="outline"
         label="取消"
         @click="emit('close', false)"
       />

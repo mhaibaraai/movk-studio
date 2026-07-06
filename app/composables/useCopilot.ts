@@ -1,10 +1,18 @@
 import type { Workspace } from '#shared/utils/workspace'
 import { WORKSPACES } from '#shared/utils/workspace'
+import { withQuery } from 'ufo'
 
 interface UIChat {
   id: string
   label: string
   icon: string
+  createdAt: string | Date
+}
+
+interface ChatRow {
+  id: string
+  title: string | null
+  workspace: Workspace
   createdAt: string | Date
 }
 
@@ -63,12 +71,13 @@ export function useCopilot() {
 
   const workspace = computed<Workspace>(() => {
     const seg = route.path.split('/')[2] ?? ''
-    return (WORKSPACES as readonly string[]).includes(seg) ? seg as Workspace : 'map'
+    return (WORKSPACES as readonly string[]).includes(seg) ? seg as Workspace : 'global'
   })
 
   const isDraft = computed(() => !route.query.chat)
 
   const draftIds = useState<Record<Workspace, string>>('copilot-draft-ids', () => ({
+    global: crypto.randomUUID(),
     map: crypto.randomUUID(),
     form: crypto.randomUUID(),
     data: crypto.randomUUID()
@@ -79,10 +88,12 @@ export function useCopilot() {
   function newChat() {
     draftIds.value = { ...draftIds.value, [workspace.value]: crypto.randomUUID() }
     router.replace({ path: route.path, query: {} })
+    chatOpen.value = true
   }
 
   function openChat(id: string) {
     router.replace({ path: route.path, query: { chat: id } })
+    chatOpen.value = true
   }
 
   // 草稿首发后把当前草稿 id 固化进 URL（chatId 不变 → 不触发会话切换）
@@ -91,10 +102,11 @@ export function useCopilot() {
   }
 
   // 缓存数据须可序列化（进 SSR payload），不含函数
-  const { data: chats, refresh: refreshChats } = useFetch('/api/chats', {
+  const { data: chats, refresh: refreshChats } = useFetch(() => withQuery('/api/chats', {
+    workspace: workspace.value === 'global' ? undefined : workspace.value
+  }), {
     key: 'chats',
-    query: { workspace },
-    transform: data => data.map(chat => ({
+    transform: (data: ChatRow[]) => data.map(chat => ({
       id: chat.id,
       label: chat.title || '未命名对话',
       icon: 'i-lucide-message-circle',
