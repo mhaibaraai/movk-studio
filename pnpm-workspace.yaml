@@ -5,3 +5,6 @@ allowBuilds:
   sharp: true
   unrs-resolver: false
   vue-demi: false
+
+minimumReleaseAgeExclude:
+  - '@movk/mapbox@1.0.1'

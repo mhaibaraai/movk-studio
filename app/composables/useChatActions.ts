@@ -16,6 +16,18 @@ export function useChatActions() {
 
   const renameModal = overlay.create(LazyModalRename)
 
+  // 新建会话后立即乐观写入列表缓存，避免列表只依赖滞后的 refetch
+  function addChat(id: string): void {
+    const cache = useNuxtData<CachedChat[]>('chats')
+    if (!cache.data.value) return
+    if (cache.data.value.some(chat => chat.id === id)) return
+
+    cache.data.value = [
+      { id, label: '未命名对话', icon: 'i-lucide-message-circle', createdAt: new Date().toISOString() },
+      ...cache.data.value
+    ]
+  }
+
   async function renameChat(id: string, currentTitle: string): Promise<void> {
     const result = await renameModal.open({ title: currentTitle }).result
     if (!result || result === currentTitle) return
@@ -73,5 +85,5 @@ export function useChatActions() {
     }
   }
 
-  return { renameChat, deleteChat }
+  return { addChat, renameChat, deleteChat }
 }

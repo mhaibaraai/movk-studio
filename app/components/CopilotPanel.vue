@@ -9,6 +9,7 @@ const input = ref('')
 const toast = useToast()
 
 const { chatOpen, workspace, isDraft, chatId, persistToUrl, newChat, refreshChats } = useCopilot()
+const { addChat } = useChatActions()
 const { model } = useModels()
 const { csrf, headerName } = useCsrf()
 
@@ -64,6 +65,27 @@ const transport = new DefaultChatTransport<UIMessage>({
   })
 })
 
+interface Vote {
+  messageId: string
+  isUpvoted: boolean
+}
+
+// SSR 预取历史：刷新时服务端直出消息，切换会话时随 chatId 重取
+const requestFetch = useRequestFetch()
+const { data: history, status: historyStatus } = await useAsyncData(
+  'copilot-history',
+  async (): Promise<{ messages: UIMessage[], votes: Vote[] }> => {
+    if (isDraft.value) return { messages: [], votes: [] }
+    const id = chatId.value
+    const [chat, chatVotes] = await Promise.all([
+      requestFetch<{ messages?: UIMessage[] }>(`/api/chats/${id}`),
+      requestFetch<Vote[]>(`/api/chats/${id}/votes`).catch(() => [])
+    ])
+    return { messages: chat.messages ?? [], votes: chatVotes }
+  },
+  { watch: [chatId], default: () => ({ messages: [] as UIMessage[], votes: [] as Vote[] }) }
+)
+
 const { messages, status, error, sendMessage, regenerate, stop } = useChat({
   id: chatId.value,
   transport,
@@ -84,39 +106,22 @@ const { messages, status, error, sendMessage, regenerate, stop } = useChat({
   }
 })
 
-interface Vote {
-  messageId: string
-  isUpvoted: boolean
-}
-
 const votes = ref<Vote[]>([])
 const editingMessageId = ref<string | null>(null)
 
-// 会话切换：草稿清空消息与投票，历史拉取并回显；仅当会话只有一条未回复的 user 消息（首次发送后被中断）时才自动续答
-watch(chatId, async (id, prev) => {
-  if (id === prev) return
+const isLoadingHistory = computed(
+  () => !isDraft.value && historyStatus.value === 'pending' && !messages.value.length
+)
 
+// 历史回填：immediate 回调在 setup 期同步执行，SSR 首屏即带消息；切换会话时随 history 重填
+// 仅当会话只有一条未回复的 user 消息（首次发送后被中断）时才自动续答
+watch(history, (h) => {
   editingMessageId.value = null
-
-  if (isDraft.value) {
-    messages.value = []
-    votes.value = []
-    return
-  }
-
-  try {
-    const [chat, chatVotes] = await Promise.all([
-      $fetch<{ messages?: UIMessage[] }>(`/api/chats/${id}`),
-      $fetch<Vote[]>(`/api/chats/${id}/votes`).catch(() => [])
-    ])
-    messages.value = chat.messages ?? []
-    votes.value = chatVotes
-    if (messages.value.length === 1 && messages.value[0]?.role === 'user') {
-      regenerate()
-    }
-  } catch {
-    messages.value = []
-    votes.value = []
+  messages.value = h.messages
+  votes.value = h.votes
+  if (import.meta.client && !isDraft.value
+    && h.messages.length === 1 && h.messages[0]?.role === 'user') {
+    regenerate()
   }
 }, { immediate: true })
 
@@ -198,6 +203,7 @@ async function send(text: string) {
       toast.add({ description: '创建会话失败', icon: 'i-lucide-circle-alert', color: 'error' })
       return
     }
+    addChat(chatId.value)
     persistToUrl()
   }
 
@@ -273,6 +279,12 @@ watch(chatOpen, (value) => {
           />
         </template>
       </UChatMessages>
+
+      <div v-else-if="isLoadingHistory" class="flex flex-col gap-3">
+        <USkeleton class="h-4 w-3/4" />
+        <USkeleton class="h-4 w-1/2" />
+        <USkeleton class="h-16 w-full" />
+      </div>
 
       <div v-else class="flex flex-wrap gap-2">
         <UButton

@@ -51,8 +51,7 @@ export default defineNuxtConfig({
         '@shikijs/langs/swift',
         '@shikijs/langs/toml',
         '@shikijs/langs/xml',
-        'ai',
-        'mapbox-gl'
+        'ai'
       ]
     }
   },

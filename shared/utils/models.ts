@@ -9,27 +9,35 @@ export const MODELS = [
   { label: 'Deepseek V3.2', value: 'deepseek/deepseek-v3.2', icon: 'i-custom-deepseek' }
 ]
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
-
-type ProviderOptions = Record<string, Record<string, JsonValue>>
-
-export function resolveProviderOptions(modelId: string): ProviderOptions {
-  // https://ai-sdk.dev/providers/ai-sdk-providers/alibaba
-  if (modelId.startsWith('alibaba/')) {
-    return { alibaba: { enableThinking: true } satisfies AlibabaLanguageModelChatOptions as Record<string, JsonValue> }
-  }
-  if (modelId.startsWith('anthropic/')) {
-    return { anthropic: { thinking: { type: 'enabled', budgetTokens: 4096 } } }
-  }
-  if (modelId.startsWith('openai/')) {
-    return { openai: { reasoningEffort: 'low' } }
-  }
-  if (modelId.startsWith('zai/')) {
-    return { zai: { thinking: { type: 'enabled' } } }
-  }
-  if (modelId.startsWith('deepseek/')) {
-    return { deepseek: { thinking: { type: 'enabled' } } }
-  }
-
-  return {}
+/**
+ * @see https://ai-sdk.dev/providers/ai-sdk-providers/alibaba
+ */
+export const PROVIDER_OPTIONS = {
+  anthropic: {
+    thinking: {
+      type: 'adaptive',
+      display: 'summarized',
+      budgetTokens: 2048
+    },
+    effort: 'low'
+  },
+  openai: {
+    reasoningEffort: 'low',
+    reasoningSummary: 'detailed'
+  },
+  google: {
+    thinkingConfig: {
+      includeThoughts: true,
+      thinkingLevel: 'low'
+    }
+  },
+  zai: {
+    thinking: { type: 'enabled' }
+  },
+  deepseek: {
+    thinking: { type: 'enabled' }
+  },
+  alibaba: {
+    enableThinking: true
+  } satisfies AlibabaLanguageModelChatOptions
 }

@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
       // GIS 工具在 shared/utils/tools/ 落地后于此注册：
       // flyTo / addLayer / queryPoi / annotate / setPitch 等
     },
-    providerOptions: resolveProviderOptions(model),
+    providerOptions: PROVIDER_OPTIONS,
     stopWhen: isStepCount(6),
     experimental_transform: smoothStream(),
     onError: (error) => {
@@ -96,6 +96,7 @@ export default defineEventHandler(async (event) => {
 
   const stream = toUIMessageStream({
     stream: result.stream,
+    sendSources: true,
     sendReasoning: true,
     // 服务端生成助手消息 id 并随 start 帧下发，确保与客户端一致且每条唯一（否则落库 id 为空串，投票/编辑按 id 无法命中）
     generateMessageId: generateId,
