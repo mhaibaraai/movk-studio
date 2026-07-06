@@ -1,11 +1,16 @@
+import { createResolver } from '@nuxt/kit'
+
+const { resolve } = createResolver(import.meta.url)
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
-    '@nuxt/ui',
     '@movk/nuxt',
+    '@comark/nuxt',
     '@movk/mapbox',
-    '@nuxthub/core'
+    '@nuxthub/core',
+    'nuxt-csurf'
   ],
 
   devtools: {
@@ -13,10 +18,6 @@ export default defineNuxtConfig({
   },
 
   css: ['~/assets/css/main.css'],
-
-  routeRules: {
-    '/': { prerender: true }
-  },
 
   compatibilityDate: '2026-06-30',
 
@@ -28,6 +29,33 @@ export default defineNuxtConfig({
     }
   },
 
+  vite: {
+    optimizeDeps: {
+      include: [
+        '@ai-sdk/vue',
+        '@shikijs/langs/c',
+        '@shikijs/langs/cpp',
+        '@shikijs/langs/css',
+        '@shikijs/langs/diff',
+        '@shikijs/langs/dockerfile',
+        '@shikijs/langs/go',
+        '@shikijs/langs/graphql',
+        '@shikijs/langs/html',
+        '@shikijs/langs/java',
+        '@shikijs/langs/kotlin',
+        '@shikijs/langs/php',
+        '@shikijs/langs/python',
+        '@shikijs/langs/ruby',
+        '@shikijs/langs/rust',
+        '@shikijs/langs/sql',
+        '@shikijs/langs/swift',
+        '@shikijs/langs/toml',
+        '@shikijs/langs/xml',
+        'ai'
+      ]
+    }
+  },
+
   eslint: {
     config: {
       stylistic: {
@@ -35,6 +63,13 @@ export default defineNuxtConfig({
         braceStyle: '1tbs'
       }
     }
+  },
+
+  icon: {
+    customCollections: [{
+      prefix: 'custom',
+      dir: resolve('./app/assets/icons')
+    }]
   },
 
   mapbox: {

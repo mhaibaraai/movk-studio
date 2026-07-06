@@ -6,6 +6,9 @@ defineProps<{
 }>()
 
 const { user, clear } = useUserSession()
+const toast = useToast()
+
+const isLoggingOut = ref(false)
 
 const {
   neutralColors,
@@ -148,8 +151,11 @@ const items = computed<DropdownMenuItem[][]>(() => ([[{
 }], [{
   label: 'Log out',
   icon: 'i-lucide-log-out',
-  onSelect() {
+  loading: isLoggingOut.value,
+  async onSelect(e) {
+    e.preventDefault()
     clear()
+    toast.add({ title: '已退出登录', color: 'success', icon: 'i-lucide-circle-check' })
     navigateTo('/')
   }
 }]]))
