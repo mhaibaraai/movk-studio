@@ -73,7 +73,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const abortController = new AbortController()
-  event.node.req.on('close', () => abortController.abort())
+  // res 已正常写完时 req 的 close 事件仍会触发，需排除这种情况，避免误判为客户端提前断开而跳过 onEnd 落库
+  event.node.req.on('close', () => {
+    if (!event.node.res.writableEnded) {
+      abortController.abort()
+    }
+  })
 
   const result = streamText({
     abortSignal: abortController.signal,
