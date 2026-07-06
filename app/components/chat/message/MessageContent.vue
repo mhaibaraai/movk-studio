@@ -5,6 +5,12 @@ import { isPartStreaming, isToolStreaming } from '@nuxt/ui/utils/ai'
 
 defineProps<{
   message: UIMessage
+  editing: boolean
+}>()
+
+const emit = defineEmits<{
+  save: [message: UIMessage, text: string]
+  cancelEdit: []
 }>()
 </script>
 
@@ -29,9 +35,18 @@ defineProps<{
 
     <template v-else-if="isTextUIPart(part) && part.text.length > 0">
       <ChatComark v-if="message.role === 'assistant'" :markdown="part.text" :streaming="isPartStreaming(part)" />
-      <p v-else-if="message.role === 'user'" class="whitespace-pre-wrap text-sm/6">
-        {{ part.text }}
-      </p>
+      <template v-else-if="message.role === 'user'">
+        <ChatMessageEdit
+          v-if="editing"
+          :message="message"
+          :text="part.text"
+          @save="(msg, text) => emit('save', msg, text)"
+          @cancel="emit('cancelEdit')"
+        />
+        <p v-else class="whitespace-pre-wrap text-sm/6">
+          {{ part.text }}
+        </p>
+      </template>
     </template>
   </template>
 </template>

@@ -84,25 +84,103 @@ const { messages, status, error, sendMessage, regenerate, stop } = useChat({
   }
 })
 
-// 会话切换：草稿清空消息，历史拉取并回显；仅当会话只有一条未回复的 user 消息（首次发送后被中断）时才自动续答
+interface Vote {
+  messageId: string
+  isUpvoted: boolean
+}
+
+const votes = ref<Vote[]>([])
+const editingMessageId = ref<string | null>(null)
+
+// 会话切换：草稿清空消息与投票，历史拉取并回显；仅当会话只有一条未回复的 user 消息（首次发送后被中断）时才自动续答
 watch(chatId, async (id, prev) => {
   if (id === prev) return
 
+  editingMessageId.value = null
+
   if (isDraft.value) {
     messages.value = []
+    votes.value = []
     return
   }
 
   try {
-    const chat = await $fetch<{ messages?: UIMessage[] }>(`/api/chats/${id}`)
+    const [chat, chatVotes] = await Promise.all([
+      $fetch<{ messages?: UIMessage[] }>(`/api/chats/${id}`),
+      $fetch<Vote[]>(`/api/chats/${id}/votes`).catch(() => [])
+    ])
     messages.value = chat.messages ?? []
+    votes.value = chatVotes
     if (messages.value.length === 1 && messages.value[0]?.role === 'user') {
       regenerate()
     }
   } catch {
     messages.value = []
+    votes.value = []
   }
 }, { immediate: true })
+
+function getVote(messageId: string): boolean | null {
+  const found = votes.value.find(v => v.messageId === messageId)
+  return found ? found.isUpvoted : null
+}
+
+async function vote(message: UIMessage, isUpvoted: boolean) {
+  const snapshot = votes.value.map(v => ({ ...v }))
+  const toggling = getVote(message.id) === isUpvoted
+  const next = toggling ? null : isUpvoted
+
+  votes.value = next === null
+    ? votes.value.filter(v => v.messageId !== message.id)
+    : [...votes.value.filter(v => v.messageId !== message.id), { messageId: message.id, isUpvoted: next }]
+
+  try {
+    await $fetch(`/api/chats/${chatId.value}/votes`, {
+      method: 'POST',
+      headers: { [headerName]: csrf },
+      body: next === null ? { messageId: message.id } : { messageId: message.id, isUpvoted: next }
+    })
+  } catch {
+    votes.value = snapshot
+    toast.add({ description: '投票失败', icon: 'i-lucide-circle-alert', color: 'error' })
+  }
+}
+
+function startEdit(message: UIMessage) {
+  if (editingMessageId.value) return
+  editingMessageId.value = message.id
+}
+
+async function saveEdit(message: UIMessage, text: string) {
+  try {
+    await $fetch(`/api/chats/${chatId.value}/messages`, {
+      method: 'DELETE',
+      headers: { [headerName]: csrf },
+      body: { messageId: message.id, type: 'edit' }
+    })
+  } catch {
+    toast.add({ description: '保存编辑失败', icon: 'i-lucide-circle-alert', color: 'error' })
+    return
+  }
+
+  editingMessageId.value = null
+  sendMessage({ text, messageId: message.id })
+}
+
+async function regenerateMessage(message: UIMessage) {
+  try {
+    await $fetch(`/api/chats/${chatId.value}/messages`, {
+      method: 'DELETE',
+      headers: { [headerName]: csrf },
+      body: { messageId: message.id, type: 'regenerate' }
+    })
+  } catch {
+    toast.add({ description: '重新生成失败', icon: 'i-lucide-circle-alert', color: 'error' })
+    return
+  }
+
+  regenerate({ messageId: message.id })
+}
 
 async function send(text: string) {
   const value = text.trim()
@@ -145,7 +223,7 @@ watch(chatOpen, (value) => {
   <USidebar
     v-model:open="chatOpen"
     side="right"
-    :style="{ '--sidebar-width': '25rem' }"
+    :style="{ '--sidebar-width': '30rem' }"
     title="Copilot"
   >
     <template #actions>
@@ -175,7 +253,24 @@ watch(chatOpen, (value) => {
         </template>
 
         <template #content="{ message }">
-          <ChatMessageContent :message="message" />
+          <ChatMessageContent
+            :message="message"
+            :editing="editingMessageId === message.id"
+            @save="saveEdit"
+            @cancel-edit="editingMessageId = null"
+          />
+        </template>
+
+        <template #actions="{ message }">
+          <ChatMessageActions
+            :message="message"
+            :streaming="status === 'streaming' && message.id === messages.at(-1)?.id"
+            :editing="editingMessageId === message.id"
+            :vote="getVote(message.id)"
+            @edit="startEdit"
+            @regenerate="regenerateMessage"
+            @vote="vote"
+          />
         </template>
       </UChatMessages>
 

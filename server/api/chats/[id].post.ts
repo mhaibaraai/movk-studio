@@ -1,5 +1,5 @@
 import type { UIMessage } from 'ai'
-import { convertToModelMessages, createUIMessageStreamResponse, generateText, isStepCount, smoothStream, streamText, toUIMessageStream } from 'ai'
+import { convertToModelMessages, createUIMessageStreamResponse, generateId, generateText, isStepCount, smoothStream, streamText, toUIMessageStream } from 'ai'
 import { db, schema } from 'hub:db'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
@@ -96,6 +96,8 @@ export default defineEventHandler(async (event) => {
   const stream = toUIMessageStream({
     stream: result.stream,
     sendReasoning: true,
+    // 服务端生成助手消息 id 并随 start 帧下发，确保与客户端一致且每条唯一（否则落库 id 为空串，投票/编辑按 id 无法命中）
+    generateMessageId: generateId,
     onEnd: async ({ responseMessage }) => {
       // 流被中断且无内容时不落库，避免重载出现空消息帧
       if (!responseMessage.parts?.length) return

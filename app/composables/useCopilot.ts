@@ -5,7 +5,7 @@ export function useCopilot() {
   const route = useRoute()
   const router = useRouter()
 
-  const chatOpen = useState('copilot-chat-open', () => false)
+  const chatOpen = useState('copilot-chat-open', () => !!route.query.chat)
 
   const workspace = computed<Workspace>(() => {
     const seg = route.path.split('/')[2] ?? ''
