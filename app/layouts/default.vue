@@ -1,5 +1,13 @@
 <script lang="ts" setup>
 import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
+import type { Workspace } from '#shared/utils/workspace'
+
+interface ChatRow {
+  id: string
+  title: string | null
+  workspace: Workspace
+  createdAt: string | Date
+}
 
 const { loggedIn, fetch: fetchSession } = useUserSession()
 const toast = useToast()
@@ -30,8 +38,28 @@ function loginWithGithub() {
   }, 500)
 }
 
-const { chats, chatOpen, newChat, groups, refreshChats } = useCopilot()
+const { chatOpen, newChat, refreshChats, workspace, chatId, openChat } = useCopilot()
 const { renameChat, deleteChat } = useChatActions()
+
+const { data: chats } = useFetch('/api/chats', {
+  key: 'chats',
+  query: { workspace },
+  transform: (data: ChatRow[]) => data.map(chat => ({
+    id: chat.id,
+    label: chat.title || '未命名对话',
+    icon: 'i-lucide-message-circle',
+    createdAt: chat.createdAt
+  }))
+})
+
+const groups = computed(() => groupByDate(chats).map(group => ({
+  ...group,
+  items: group.items.map(item => ({
+    ...item,
+    active: item.id === chatId.value,
+    onSelect: () => openChat(item.id)
+  }))
+})))
 
 const route = useRoute()
 watch(() => route.query.chat, () => {

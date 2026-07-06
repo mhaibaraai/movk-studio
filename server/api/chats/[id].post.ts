@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
   // 首条消息后生成标题
   if (!chat.title) {
     const { text: title } = await generateText({
-      model,
+      model: resolveModel(model),
       instructions: TITLE_INSTRUCTIONS,
       prompt: JSON.stringify(messages[0])
     })
@@ -77,7 +77,7 @@ export default defineEventHandler(async (event) => {
 
   const result = streamText({
     abortSignal: abortController.signal,
-    model,
+    model: resolveModel(model),
     instructions: copilotSystemPrompt(chat.workspace),
     messages: await convertToModelMessages(messages),
     tools: {

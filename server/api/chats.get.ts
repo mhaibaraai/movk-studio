@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   return await db.query.chats.findMany({
     where: () => and(
       eq(schema.chats.userId, userId),
-      workspace ? eq(schema.chats.workspace, workspace) : undefined
+      workspace && workspace !== 'global' ? eq(schema.chats.workspace, workspace) : undefined
     ),
     columns: {
       id: true,
