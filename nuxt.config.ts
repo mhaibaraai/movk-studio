@@ -7,8 +7,8 @@ export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
     '@movk/nuxt',
-    '@comark/nuxt',
     '@movk/mapbox',
+    '@comark/nuxt',
     '@nuxthub/core',
     'nuxt-csurf'
   ],
@@ -51,7 +51,8 @@ export default defineNuxtConfig({
         '@shikijs/langs/swift',
         '@shikijs/langs/toml',
         '@shikijs/langs/xml',
-        'ai'
+        'ai',
+        'mapbox-gl'
       ]
     }
   },
@@ -73,6 +74,7 @@ export default defineNuxtConfig({
   },
 
   mapbox: {
-    accessToken: process.env.NUXT_MAPBOX_TOKEN
+    accessToken: process.env.NUXT_MAPBOX_TOKEN,
+    tiandituToken: process.env.NUXT_TIANDITU_TOKEN
   }
 })
