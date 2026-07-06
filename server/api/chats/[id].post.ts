@@ -72,25 +72,26 @@ export default defineEventHandler(async (event) => {
     await db.update(schema.chats).set({ title }).where(eq(schema.chats.id, id))
   }
 
-  const abortController = new AbortController()
   // res 已正常写完时 req 的 close 事件仍会触发，需排除这种情况，避免误判为客户端提前断开而跳过 onEnd 落库
-  event.node.req.on('close', () => {
-    if (!event.node.res.writableEnded) {
-      abortController.abort()
-    }
-  })
+  const abortController = new AbortController()
+  event.node.req.on('close', () => abortController.abort())
 
   const result = streamText({
     abortSignal: abortController.signal,
     model: resolveModel(model),
+    maxOutputTokens: 8000,
     instructions: copilotSystemPrompt(chat.workspace),
     messages: await convertToModelMessages(messages),
     tools: {
       // GIS 工具在 shared/utils/tools/ 落地后于此注册：
       // flyTo / addLayer / queryPoi / annotate / setPitch 等
     },
-    stopWhen: isStepCount(5),
-    experimental_transform: smoothStream()
+    providerOptions: resolveProviderOptions(model),
+    stopWhen: isStepCount(6),
+    experimental_transform: smoothStream(),
+    onError: (error) => {
+      console.error('streamText error:', error)
+    }
   })
 
   const stream = toUIMessageStream({
