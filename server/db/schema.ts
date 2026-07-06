@@ -26,7 +26,7 @@ export const chats = pgTable('chats', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   title: text('title'),
   userId: text('user_id').notNull(),
-  workspace: text('workspace', { enum: ['map', 'form', 'data'] }).notNull().default('map'),
+  workspace: text('workspace', { enum: ['global', 'map', 'form', 'data'] }).notNull().default('global'),
   visibility: text('visibility', { enum: ['public', 'private'] }).notNull().default('private'),
   ...timestamps
 }, table => [

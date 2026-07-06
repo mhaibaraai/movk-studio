@@ -108,7 +108,10 @@ defineShortcuts({
       resizable
     >
       <template #header="{ collapsed }">
-        <AppLogo v-if="!collapsed" class="h-6 w-auto shrink-0" />
+        <NuxtLink v-if="!collapsed" to="/">
+          <AppLogo class="h-6 w-auto shrink-0" />
+        </NuxtLink>
+
         <UTooltip :text="collapsed ? '打开 Sidebar' : '折叠 Sidebar'">
           <UDashboardSidebarCollapse class="ms-auto" />
         </UTooltip>

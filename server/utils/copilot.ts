@@ -2,6 +2,7 @@ import type { Workspace } from '#shared/utils/workspace'
 
 // 每个工作区给 AI 的能力提示；GIS 工具落地后在此补充可调用动作清单
 const WORKSPACE_BRIEF: Record<Workspace, string> = {
+  global: '当前不在具体工作区，作为通用助手介绍 Movk Studio 的能力、解答产品与使用问题，并在需要时引导用户进入地图、表单或数据工作区，不绑定具体模块工具。',
   map: '当前在「地图」工作区，可围绕定位飞行、图层叠加（如天地图影像）、POI 查询、标注增删、视角切换（如 3D 倾斜）等地图操作展开。',
   form: '当前在「表单」工作区，可围绕表单结构、字段配置与校验规则展开。',
   data: '当前在「数据」工作区，可围绕数据查询、筛选与可视化展开。'

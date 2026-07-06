@@ -34,6 +34,7 @@ export function useChatActions() {
         headers: { [headerName]: csrf },
         body: { title: result }
       })
+      toast.add({ description: '重命名成功', color: 'success', icon: 'i-lucide-circle-check' })
     } catch {
       cache.data.value = snapshot
       refreshChats()
@@ -62,6 +63,7 @@ export function useChatActions() {
         method: 'DELETE',
         headers: { [headerName]: csrf }
       })
+      toast.add({ description: '已删除', color: 'success', icon: 'i-lucide-circle-check' })
       // 删除的是当前打开会话时回到草稿态
       if (chatId.value === id) newChat()
     } catch {

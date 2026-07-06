@@ -19,31 +19,22 @@ export default defineEventHandler(async (event) => {
     id: z.string()
   }).parse)
 
-  const { model, workspace, messages } = await readValidatedBody(event, z.object({
+  const { model, messages } = await readValidatedBody(event, z.object({
     model: z.string().refine(value => MODELS.some(m => m.value === value), {
       message: 'Invalid model'
     }),
-    workspace: z.enum(WORKSPACES),
     messages: z.array(z.custom<UIMessage>())
   }).parse)
 
-  // 单写路径：会话不存在则按当前工作区创建（草稿首发）；已存在则校验归属，防止占用他人会话 id
-  let chat = await db.query.chats.findFirst({
+  // 会话须已由 POST /api/chats 建壳，此处仅流式：不存在 404，非本人 403（IDOR）
+  const chat = await db.query.chats.findFirst({
     where: () => eq(schema.chats.id, id)
   })
-  if (chat && chat.userId !== userId) {
+  if (!chat) {
+    throw createError({ statusCode: 404, statusMessage: 'Chat not found' })
+  }
+  if (chat.userId !== userId) {
     throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
-  }
-  if (!chat) {
-    [chat] = await db.insert(schema.chats).values({
-      id,
-      title: '',
-      userId,
-      workspace
-    }).returning()
-  }
-  if (!chat) {
-    throw createError({ statusCode: 500, statusMessage: 'Failed to create chat' })
   }
 
   // 落库最新一条用户消息（重发/编辑用 upsert 覆盖 parts）
@@ -87,7 +78,7 @@ export default defineEventHandler(async (event) => {
   const result = streamText({
     abortSignal: abortController.signal,
     model,
-    instructions: copilotSystemPrompt(workspace),
+    instructions: copilotSystemPrompt(chat.workspace),
     messages: await convertToModelMessages(messages),
     tools: {
       // GIS 工具在 shared/utils/tools/ 落地后于此注册：
