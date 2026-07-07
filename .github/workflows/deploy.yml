@@ -62,6 +62,7 @@ jobs:
         env:
           NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
           NUXT_MAPBOX_TOKEN: ${{ secrets.NUXT_MAPBOX_TOKEN }}
+          NUXT_TIANDITU_TOKEN: ${{ secrets.NUXT_TIANDITU_TOKEN }}
         run: pnpm build
 
       - name: Log in to GHCR
