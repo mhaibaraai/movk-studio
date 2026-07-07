@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import type { UIMessage } from 'ai'
-import type { Workspace } from '#shared/utils/workspace'
 import { DefaultChatTransport } from 'ai'
 import { useChat } from '@ai-sdk/vue'
 
@@ -12,31 +11,6 @@ const { chatOpen, workspace, isDraft, chatId, persistToUrl, newChat, refreshChat
 const { addChat } = useChatActions()
 const { model } = useModels()
 const { csrf, headerName } = useCsrf()
-
-const QUICK_CHATS: Record<Workspace, string[]> = {
-  global: [
-    'Movk Studio 能做什么？',
-    '地图、表单、数据三个工作区分别用于什么？',
-    '如何开始一个新项目？'
-  ],
-  map: [
-    '什么是 MOVK？',
-    '飞到上海并标注外滩，叠加天地图影像',
-    '这附近有哪些 POI？',
-    '切换 3D 倾斜视角',
-    '删除所有标注'
-  ],
-  form: [
-    '如何设计一个表单结构？',
-    '给字段添加校验规则',
-    '常见字段类型有哪些？'
-  ],
-  data: [
-    '如何查询和筛选数据？',
-    '把结果做成可视化图表',
-    '导出当前数据'
-  ]
-}
 
 const quickChats = computed(() => QUICK_CHATS[workspace.value])
 
