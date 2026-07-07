@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import type { UIMessage } from 'ai'
-import type { Workspace } from '#shared/utils/workspace'
 import { DefaultChatTransport } from 'ai'
 import { useChat } from '@ai-sdk/vue'
 
@@ -9,33 +8,9 @@ const input = ref('')
 const toast = useToast()
 
 const { chatOpen, workspace, isDraft, chatId, persistToUrl, newChat, refreshChats } = useCopilot()
+const { addChat } = useChatActions()
 const { model } = useModels()
 const { csrf, headerName } = useCsrf()
-
-const QUICK_CHATS: Record<Workspace, string[]> = {
-  global: [
-    'Movk Studio 能做什么？',
-    '地图、表单、数据三个工作区分别用于什么？',
-    '如何开始一个新项目？'
-  ],
-  map: [
-    '什么是 MOVK？',
-    '飞到上海并标注外滩，叠加天地图影像',
-    '这附近有哪些 POI？',
-    '切换 3D 倾斜视角',
-    '删除所有标注'
-  ],
-  form: [
-    '如何设计一个表单结构？',
-    '给字段添加校验规则',
-    '常见字段类型有哪些？'
-  ],
-  data: [
-    '如何查询和筛选数据？',
-    '把结果做成可视化图表',
-    '导出当前数据'
-  ]
-}
 
 const quickChats = computed(() => QUICK_CHATS[workspace.value])
 
@@ -64,6 +39,27 @@ const transport = new DefaultChatTransport<UIMessage>({
   })
 })
 
+interface Vote {
+  messageId: string
+  isUpvoted: boolean
+}
+
+// SSR 预取历史：刷新时服务端直出消息，切换会话时随 chatId 重取
+const requestFetch = useRequestFetch()
+const { data: history, status: historyStatus } = await useAsyncData(
+  'copilot-history',
+  async (): Promise<{ messages: UIMessage[], votes: Vote[] }> => {
+    if (isDraft.value) return { messages: [], votes: [] }
+    const id = chatId.value
+    const [chat, chatVotes] = await Promise.all([
+      requestFetch<{ messages?: UIMessage[] }>(`/api/chats/${id}`),
+      requestFetch<Vote[]>(`/api/chats/${id}/votes`).catch(() => [])
+    ])
+    return { messages: chat.messages ?? [], votes: chatVotes }
+  },
+  { watch: [chatId], default: () => ({ messages: [] as UIMessage[], votes: [] as Vote[] }) }
+)
+
 const { messages, status, error, sendMessage, regenerate, stop } = useChat({
   id: chatId.value,
   transport,
@@ -84,25 +80,89 @@ const { messages, status, error, sendMessage, regenerate, stop } = useChat({
   }
 })
 
-// 会话切换：草稿清空消息，历史拉取并回显；仅当会话只有一条未回复的 user 消息（首次发送后被中断）时才自动续答
-watch(chatId, async (id, prev) => {
-  if (id === prev) return
+const votes = ref<Vote[]>([])
+const editingMessageId = ref<string | null>(null)
 
-  if (isDraft.value) {
-    messages.value = []
+const isLoadingHistory = computed(
+  () => !isDraft.value && historyStatus.value === 'pending' && !messages.value.length
+)
+
+// 历史回填：immediate 回调在 setup 期同步执行，SSR 首屏即带消息；切换会话时随 history 重填
+// 仅当会话只有一条未回复的 user 消息（首次发送后被中断）时才自动续答
+watch(history, (h) => {
+  editingMessageId.value = null
+  messages.value = h.messages
+  votes.value = h.votes
+  if (import.meta.client && !isDraft.value
+    && h.messages.length === 1 && h.messages[0]?.role === 'user') {
+    regenerate()
+  }
+}, { immediate: true })
+
+// map 工作区工具输出 → 驱动地图（CopilotPanel 常驻，composable 内部按 workspace 守卫）
+useMapToolDispatch(messages, workspace, chatId)
+
+function getVote(messageId: string): boolean | null {
+  const found = votes.value.find(v => v.messageId === messageId)
+  return found ? found.isUpvoted : null
+}
+
+async function vote(message: UIMessage, isUpvoted: boolean) {
+  const snapshot = votes.value.map(v => ({ ...v }))
+  const toggling = getVote(message.id) === isUpvoted
+  const next = toggling ? null : isUpvoted
+
+  votes.value = next === null
+    ? votes.value.filter(v => v.messageId !== message.id)
+    : [...votes.value.filter(v => v.messageId !== message.id), { messageId: message.id, isUpvoted: next }]
+
+  try {
+    await $fetch(`/api/chats/${chatId.value}/votes`, {
+      method: 'POST',
+      headers: { [headerName]: csrf },
+      body: next === null ? { messageId: message.id } : { messageId: message.id, isUpvoted: next }
+    })
+  } catch {
+    votes.value = snapshot
+    toast.add({ description: '投票失败', icon: 'i-lucide-circle-alert', color: 'error' })
+  }
+}
+
+function startEdit(message: UIMessage) {
+  if (editingMessageId.value) return
+  editingMessageId.value = message.id
+}
+
+async function saveEdit(message: UIMessage, text: string) {
+  try {
+    await $fetch(`/api/chats/${chatId.value}/messages`, {
+      method: 'DELETE',
+      headers: { [headerName]: csrf },
+      body: { messageId: message.id, type: 'edit' }
+    })
+  } catch {
+    toast.add({ description: '保存编辑失败', icon: 'i-lucide-circle-alert', color: 'error' })
     return
   }
 
+  editingMessageId.value = null
+  sendMessage({ text, messageId: message.id })
+}
+
+async function regenerateMessage(message: UIMessage) {
   try {
-    const chat = await $fetch<{ messages?: UIMessage[] }>(`/api/chats/${id}`)
-    messages.value = chat.messages ?? []
-    if (messages.value.length === 1 && messages.value[0]?.role === 'user') {
-      regenerate()
-    }
+    await $fetch(`/api/chats/${chatId.value}/messages`, {
+      method: 'DELETE',
+      headers: { [headerName]: csrf },
+      body: { messageId: message.id, type: 'regenerate' }
+    })
   } catch {
-    messages.value = []
+    toast.add({ description: '重新生成失败', icon: 'i-lucide-circle-alert', color: 'error' })
+    return
   }
-}, { immediate: true })
+
+  regenerate({ messageId: message.id })
+}
 
 async function send(text: string) {
   const value = text.trim()
@@ -120,6 +180,7 @@ async function send(text: string) {
       toast.add({ description: '创建会话失败', icon: 'i-lucide-circle-alert', color: 'error' })
       return
     }
+    addChat(chatId.value)
     persistToUrl()
   }
 
@@ -145,7 +206,7 @@ watch(chatOpen, (value) => {
   <USidebar
     v-model:open="chatOpen"
     side="right"
-    :style="{ '--sidebar-width': '25rem' }"
+    :style="{ '--sidebar-width': '30rem' }"
     title="Copilot"
   >
     <template #actions>
@@ -175,9 +236,32 @@ watch(chatOpen, (value) => {
         </template>
 
         <template #content="{ message }">
-          <ChatMessageContent :message="message" />
+          <ChatMessageContent
+            :message="message"
+            :editing="editingMessageId === message.id"
+            @save="saveEdit"
+            @cancel-edit="editingMessageId = null"
+          />
+        </template>
+
+        <template #actions="{ message }">
+          <ChatMessageActions
+            :message="message"
+            :streaming="status === 'streaming' && message.id === messages.at(-1)?.id"
+            :editing="editingMessageId === message.id"
+            :vote="getVote(message.id)"
+            @edit="startEdit"
+            @regenerate="regenerateMessage"
+            @vote="vote"
+          />
         </template>
       </UChatMessages>
+
+      <div v-else-if="isLoadingHistory" class="flex flex-col gap-3">
+        <USkeleton class="h-4 w-3/4" />
+        <USkeleton class="h-4 w-1/2" />
+        <USkeleton class="h-16 w-full" />
+      </div>
 
       <div v-else class="flex flex-wrap gap-2">
         <UButton

@@ -2,7 +2,7 @@ import { boolean, index, jsonb, pgTable, primaryKey, text, timestamp, uniqueInde
 import { relations } from 'drizzle-orm'
 
 const timestamps = {
-  createdAt: timestamp('created_at').notNull().defaultNow()
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 }
 
 export const users = pgTable('users', {

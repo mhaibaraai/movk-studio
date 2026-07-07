@@ -1,0 +1,44 @@
+<script setup lang="ts">
+import type { UIMessage } from 'ai'
+
+const props = defineProps<{
+  message: UIMessage
+  text: string
+}>()
+
+const emit = defineEmits<{
+  save: [message: UIMessage, text: string]
+  cancel: []
+}>()
+
+const editingText = ref(props.text)
+</script>
+
+<template>
+  <div class="flex flex-col gap-2 w-full">
+    <UTextarea
+      v-model="editingText"
+      autofocus
+      autoresize
+      :rows="1"
+      size="sm"
+      variant="none"
+    />
+
+    <div class="flex gap-1.5 justify-end">
+      <UButton
+        size="xs"
+        variant="soft"
+        color="neutral"
+        label="取消"
+        @click="emit('cancel')"
+      />
+      <UButton
+        size="xs"
+        label="保存"
+        :disabled="!editingText.trim() || editingText === text"
+        @click="emit('save', message, editingText)"
+      />
+    </div>
+  </div>
+</template>
