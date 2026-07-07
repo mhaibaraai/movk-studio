@@ -1,5 +1,3 @@
-import type { AlibabaLanguageModelChatOptions } from '@ai-sdk/alibaba'
-
 export const MODELS = [
   { label: 'GLM 5.2', value: 'alibaba/glm-5.2', icon: 'i-custom-qwen' },
   { label: 'Claude Haiku 4.5', value: 'anthropic/claude-haiku-4.5', icon: 'i-simple-icons-anthropic' },
@@ -8,36 +6,3 @@ export const MODELS = [
   { label: 'GLM 5.2', value: 'zai/glm-5.2', icon: 'i-custom-zai' },
   { label: 'Deepseek V3.2', value: 'deepseek/deepseek-v3.2', icon: 'i-custom-deepseek' }
 ]
-
-/**
- * @see https://ai-sdk.dev/providers/ai-sdk-providers/alibaba
- */
-export const PROVIDER_OPTIONS = {
-  anthropic: {
-    thinking: {
-      type: 'adaptive',
-      display: 'summarized',
-      budgetTokens: 2048
-    },
-    effort: 'low'
-  },
-  openai: {
-    reasoningEffort: 'low',
-    reasoningSummary: 'detailed'
-  },
-  google: {
-    thinkingConfig: {
-      includeThoughts: true,
-      thinkingLevel: 'low'
-    }
-  },
-  zai: {
-    thinking: { type: 'enabled' }
-  },
-  deepseek: {
-    thinking: { type: 'enabled' }
-  },
-  alibaba: {
-    enableThinking: true
-  } satisfies AlibabaLanguageModelChatOptions
-}
