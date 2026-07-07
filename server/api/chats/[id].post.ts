@@ -82,10 +82,7 @@ export default defineEventHandler(async (event) => {
     maxOutputTokens: 8000,
     instructions: copilotSystemPrompt(chat.workspace),
     messages: await convertToModelMessages(messages),
-    tools: {
-      // GIS 工具在 shared/utils/tools/ 落地后于此注册：
-      // flyTo / addLayer / queryPoi / annotate / setPitch 等
-    },
+    tools: getToolsForWorkspace(chat.workspace),
     providerOptions: PROVIDER_OPTIONS,
     stopWhen: isStepCount(6),
     experimental_transform: smoothStream(),

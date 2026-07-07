@@ -10,6 +10,7 @@ export default defineNuxtConfig({
     '@movk/mapbox',
     '@comark/nuxt',
     '@nuxthub/core',
+    '@nuxtjs/mcp-toolkit',
     'nuxt-csurf'
   ],
 
@@ -18,6 +19,13 @@ export default defineNuxtConfig({
   },
 
   css: ['~/assets/css/main.css'],
+
+  routeRules: {
+    '/mcp/**': {
+      // @ts-expect-error nuxt-csurf 运行时读取 routeRules.csurf 关闭 CSRF；Nuxt 4 新 nitro 下该类型增强未合并
+      csurf: false
+    }
+  },
 
   compatibilityDate: '2026-06-30',
 
@@ -51,7 +59,8 @@ export default defineNuxtConfig({
         '@shikijs/langs/swift',
         '@shikijs/langs/toml',
         '@shikijs/langs/xml',
-        'ai'
+        'ai',
+        '@turf/circle'
       ]
     }
   },
@@ -75,5 +84,9 @@ export default defineNuxtConfig({
   mapbox: {
     accessToken: process.env.NUXT_MAPBOX_TOKEN,
     tiandituToken: process.env.NUXT_TIANDITU_TOKEN
+  },
+
+  mcp: {
+    name: 'Movk Studio'
   }
 })
