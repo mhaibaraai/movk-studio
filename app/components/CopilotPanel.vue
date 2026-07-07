@@ -125,6 +125,9 @@ watch(history, (h) => {
   }
 }, { immediate: true })
 
+// map 工作区工具输出 → 驱动地图（CopilotPanel 常驻，composable 内部按 workspace 守卫）
+useMapToolDispatch(messages, workspace, chatId)
+
 function getVote(messageId: string): boolean | null {
   const found = votes.value.find(v => v.messageId === messageId)
   return found ? found.isUpvoted : null
