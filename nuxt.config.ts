@@ -20,6 +20,11 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
+  // 天地图地点检索服务需要服务端类型 key（IP 白名单校验），与上面浏览器端类型的 tiandituToken 不同，不做 public 暴露
+  runtimeConfig: {
+    tiandituSearchToken: process.env.NUXT_TIANDITU_SEARCH_TOKEN
+  },
+
   routeRules: {
     '/mcp/**': {
       // @ts-expect-error nuxt-csurf 运行时读取 routeRules.csurf 关闭 CSRF；Nuxt 4 新 nitro 下该类型增强未合并
@@ -82,8 +87,8 @@ export default defineNuxtConfig({
   },
 
   mapbox: {
-    accessToken: process.env.NUXT_MAPBOX_TOKEN,
-    tiandituToken: process.env.NUXT_TIANDITU_TOKEN
+    accessToken: '',
+    tiandituToken: ''
   },
 
   mcp: {

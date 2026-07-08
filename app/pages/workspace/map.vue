@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import type { FeatureCollection, Geometry } from 'geojson'
 
-const { markers, basemap, geojsonLayers, bufferCircles } = useMapWorkspace()
+const { markers, basemap, geojsonLayers, bufferCircles, pois, adminBoundary, route } = useMapWorkspace()
 
 const MARKER_COLOR = '#f43f5e'
 const LAYER_COLOR = '#f43f5e'
 const CIRCLE_COLOR = '#3b82f6'
+const POI_COLOR = '#3b82f6'
+const BOUNDARY_COLOR = '#3b82f6'
+const ROUTE_COLOR = '#6366f1'
+
+function toGeometryFeature(geometry: Geometry): FeatureCollection {
+  return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry }] }
+}
 
 function toFeatureCollection(layer: MapGeoJSONLayer): FeatureCollection {
   let geometry: Geometry
@@ -54,6 +61,24 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
   >
     <MapboxTiandituLayer :layer="basemap.layer" :annotation="basemap.annotation" />
 
+    <MapboxLayer
+      v-if="adminBoundary"
+      :key="`admin-${adminBoundary.name}`"
+      layer-id="admin-boundary"
+      type="fill"
+      :source="{ type: 'geojson', data: toGeometryFeature(adminBoundary.boundary) }"
+      :paint="{ 'fill-color': BOUNDARY_COLOR, 'fill-opacity': 0.15, 'fill-outline-color': BOUNDARY_COLOR }"
+    />
+
+    <MapboxLayer
+      v-if="route"
+      layer-id="route-line"
+      type="line"
+      :source="{ type: 'geojson', data: toGeometryFeature(route) }"
+      :layout="{ 'line-cap': 'round', 'line-join': 'round' }"
+      :paint="{ 'line-color': ROUTE_COLOR, 'line-width': 5 }"
+    />
+
     <MapboxBufferCircle
       v-for="circle in bufferCircles"
       :key="circle.id"
@@ -81,6 +106,18 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
         class="rounded-full size-3 border-2 border-white shadow"
         :style="{ background: marker.color ?? MARKER_COLOR }"
         :title="marker.label ?? undefined"
+      />
+    </MapboxMarker>
+
+    <MapboxMarker
+      v-for="poi in pois"
+      :key="poi.id"
+      :lnglat="[poi.longitude, poi.latitude]"
+    >
+      <div
+        class="rounded-sm rotate-45 size-2.5 border-2 border-white shadow"
+        :style="{ background: POI_COLOR }"
+        :title="[poi.name, poi.address].filter(Boolean).join(' · ')"
       />
     </MapboxMarker>
 

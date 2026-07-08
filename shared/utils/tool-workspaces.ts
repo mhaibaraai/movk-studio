@@ -12,5 +12,10 @@ export const TOOL_WORKSPACES: Record<string, Workspace[]> = {
   'add-geojson': ['map'],
   'export-image': ['map'],
   'measure-distance': ['map'],
-  'convert-coordinate': ['map']
+  'convert-coordinate': ['map'],
+  'geocode-place': ['map'],
+  'search-poi': ['map'],
+  'reverse-geocode': ['map'],
+  'get-administrative-boundary': ['map'],
+  'plan-route': ['map']
 }

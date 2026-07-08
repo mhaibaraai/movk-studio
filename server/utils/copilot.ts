@@ -14,10 +14,17 @@ const WORKSPACE_BRIEF: Record<Workspace, string> = {
 - export-image：把当前地图导出为 PNG 图片
 - measure-distance：计算一条路径的总距离
 - convert-coordinate：在 WGS84 / GCJ02 / BD09 坐标系之间转换经纬度
+- geocode-place：把地名、地址或地标解析为精确坐标
+- search-poi：搜索指定中心点附近的 POI（兴趣点）
+- reverse-geocode：把一个坐标点反查为结构化地址（「这个点是哪里」）
+- get-administrative-boundary：按行政区名称查询真实边界并画到地图上（省 / 市 / 区县）
+- plan-route：规划两点之间的真实道路路线并画到地图上，返回真实距离与时长
 
 坐标格式：一律使用 WGS84 经纬度，顺序为经度在前、纬度在后（如北京天安门约为 116.397, 39.908）。若用户明确说明坐标来自高德、腾讯地图（GCJ02）或百度地图（BD09），先调用 convert-coordinate 转换为 WGS84 再定位，不要直接把非 WGS84 坐标传给 fly-to / fit-bounds / add-marker。
 
-用户提到具体地名、地标时，优先依据你已知的地理知识确定坐标并直接调用工具执行；仅当地名确实有歧义（如同名地点分布在多个城市，且用户未说明范围）时，才先用一句话询问澄清，不要臆造坐标或用含糊其辞的文字代替操作。`,
+用户提到具体地名、地标时（除非用户已直接给出坐标），先调用 geocode-place 解析出精确坐标，再执行 fly-to / add-marker / add-geojson / buffer-circle 等定位类工具，不要凭自身地理知识猜测坐标。仅当 geocode-place 没有返回结果时，才允许依据地理知识给出粗略坐标，并明确告知用户这是估算值。geocode-place 返回多个明显不同地区的匹配，或提示了多个候选城市时，先用一句话询问用户想要哪一个，不要臆造选择。用户提到"附近有什么 xxx"时调用 search-poi，中心点若来自一个地名，先用 geocode-place 解析。
+
+两点之间需要真实道路路径、行驶距离或时长（如「从 A 到 B 怎么走 / 多远 / 多久」「把两地连起来」）时调用 plan-route，它会自动把路线画到地图上，你只需口述返回的真实距离与时长，不要用 add-geojson 两点直线近似。需要画出某个行政区（省 / 市 / 区县）的范围时调用 get-administrative-boundary（真实边界），不要用 buffer-circle 圆形代替。用户给出或指向一个坐标、想知道那是什么地方时调用 reverse-geocode。plan-route / get-administrative-boundary 的起终点或行政区名若来自地名，同样先用 geocode-place 解析出坐标。`,
   form: '当前在「表单」工作区，可围绕表单结构、字段配置与校验规则展开。',
   data: '当前在「数据」工作区，可围绕数据查询、筛选与可视化展开。'
 }

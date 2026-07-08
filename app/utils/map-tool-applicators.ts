@@ -53,6 +53,29 @@ const addGeojsonOutput = z.object({
   layerId: z.string()
 })
 const exportImageOutput = z.object({ fileName: z.string() })
+const searchPoiOutput = z.object({
+  results: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    address: z.string().nullish(),
+    longitude: z.number(),
+    latitude: z.number()
+  })),
+  count: z.number()
+})
+// GeoJSON 几何：position 用 number[]（宽松，兼容含高程/精度差异），校验足以拒绝畸形输出
+const position = z.array(z.number())
+const lineStringGeom = z.object({ type: z.literal('LineString'), coordinates: z.array(position) })
+const multiPolygonGeom = z.object({ type: z.literal('MultiPolygon'), coordinates: z.array(z.array(z.array(position))) })
+const adminBoundaryOutput = z.object({
+  divisions: z.array(z.object({ name: z.string(), boundary: multiPolygonGeom }))
+})
+const planRouteOutput = z.object({
+  distanceKm: z.number(),
+  durationMinutes: z.number(),
+  path: lineStringGeom,
+  summary: z.string().optional()
+})
 
 // 状态类：把输出归约进草稿（整段状态由消息重放重建，幂等无泄漏）
 interface StateApplicator {
@@ -147,5 +170,15 @@ export const MAP_TOOL_APPLICATORS: Record<string, MapToolApplicator> = {
   }),
   'export-image': actionTool(exportImageOutput, (ctx, o) => {
     ctx.mapExport.download({ fileName: o.fileName })
+  }),
+  'search-poi': stateTool(searchPoiOutput, (draft, o) => {
+    draft.pois = o.results // 赋值替换，不是累加：每次新搜索是当前展示，不跨轮次累积历史结果
+  }),
+  'get-administrative-boundary': stateTool(adminBoundaryOutput, (draft, o) => {
+    const first = o.divisions[0]
+    draft.adminBoundary = first ? { name: first.name, boundary: first.boundary } : undefined
+  }),
+  'plan-route': stateTool(planRouteOutput, (draft, o) => {
+    draft.route = o.path // 路线几何直接落图，不经 LLM 转录；标量距离/时长留在工具输出供 LLM 口述
   })
 }
