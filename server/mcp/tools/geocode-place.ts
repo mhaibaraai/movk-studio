@@ -1,14 +1,58 @@
-import { z } from 'zod'
-import { geocodePlace } from '@movk/mapbox/utils/tianditu-search'
+import type { SearchResult } from '@movk/mapbox/runtime/types/index.js'
+
+// locate() 的判别联合归一为扁平结果：AI 只关心「解析到了没有、在哪、要不要追问」
+function normalize(result: SearchResult) {
+  if (result.kind === 'poi') {
+    const [best, ...rest] = result.pois
+    if (!best) return { found: false as const }
+    return {
+      found: true as const,
+      name: best.name,
+      address: best.address,
+      longitude: best.location[0],
+      latitude: best.location[1],
+      // 同名候选供 AI 在真正有歧义时向用户确认
+      alternatives: rest.slice(0, 3).map(poi => ({ name: poi.name, address: poi.address }))
+    }
+  }
+
+  if (result.kind === 'area') {
+    return {
+      found: true as const,
+      name: result.area.name,
+      longitude: result.area.location[0],
+      latitude: result.area.location[1]
+    }
+  }
+
+  // 天地图识别出关键词跨多个行政区，交给 AI 反问用户而不是替它猜
+  if (result.kind === 'suggestion') {
+    return {
+      found: false as const,
+      candidates: result.suggestion.admins.map(admin => admin.adminName)
+    }
+  }
+
+  return { found: false as const }
+}
 
 export default defineMcpTool({
-  description: '把地名、地址或地标（如"上海""人民广场""外滩"）解析为精确的 WGS84 坐标。在调用 fly-to / add-marker / add-geojson / buffer-circle 前，只要目标是一个具体地名而非用户已直接给出的坐标，就应先调用这个工具获取精确坐标，不要凭自身地理知识猜测坐标。',
-  inputSchema: {
-    keyword: z.string().min(1).max(50).describe('地名、地址或地标关键词')
-  },
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-  async handler(input) {
-    const tk = useRuntimeConfig().tiandituSearchToken
-    return await geocodePlace(input.keyword, { tk })
+  ...mcpToolFrom('geocode-place'),
+  handler: async (input) => {
+    const tianditu = useTianditu()
+
+    // 先试正地理编码（门址级精度，低置信度返回 undefined），未命中再走地名精确定位
+    const point = await tianditu.geocode(input.keyword)
+    if (point) {
+      return {
+        found: true as const,
+        name: input.keyword,
+        longitude: point.location[0],
+        latitude: point.location[1],
+        level: point.level
+      }
+    }
+
+    return normalize(await tianditu.locate(input.keyword))
   }
 })

@@ -20,9 +20,8 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
-  // 天地图地点检索服务需要服务端类型 key（IP 白名单校验），与上面浏览器端类型的 tiandituToken 不同，不做 public 暴露
   runtimeConfig: {
-    tiandituSearchToken: process.env.NUXT_TIANDITU_SEARCH_TOKEN
+    tiandituApiToken: ''
   },
 
   routeRules: {
@@ -84,11 +83,6 @@ export default defineNuxtConfig({
       prefix: 'custom',
       dir: resolve('./app/assets/icons')
     }]
-  },
-
-  mapbox: {
-    accessToken: '',
-    tiandituToken: ''
   },
 
   mcp: {

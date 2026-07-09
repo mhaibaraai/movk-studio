@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FeatureCollection, Geometry } from 'geojson'
 
-const { markers, basemap, geojsonLayers, bufferCircles, pois, adminBoundary, route } = useMapWorkspace()
+const state = useMapWorkspace()
 
 const MARKER_COLOR = '#f43f5e'
 const LAYER_COLOR = '#f43f5e'
@@ -10,24 +10,19 @@ const POI_COLOR = '#3b82f6'
 const BOUNDARY_COLOR = '#3b82f6'
 const ROUTE_COLOR = '#6366f1'
 
-function toGeometryFeature(geometry: Geometry): FeatureCollection {
+function toFeatureCollection(geometry: Geometry): FeatureCollection {
   return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry }] }
 }
 
-function toFeatureCollection(layer: MapGeoJSONLayer): FeatureCollection {
-  let geometry: Geometry
-  if (layer.type === 'point') {
-    geometry = { type: 'Point', coordinates: layer.coordinates[0]! }
-  } else if (layer.type === 'line') {
-    geometry = { type: 'LineString', coordinates: layer.coordinates }
-  } else {
-    const ring = [...layer.coordinates]
-    const first = ring[0]
-    const last = ring[ring.length - 1]
-    if (first && last && (first[0] !== last[0] || first[1] !== last[1])) ring.push(first)
-    geometry = { type: 'Polygon', coordinates: [ring] }
-  }
-  return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry }] }
+function shapeGeometry(layer: MapGeoJSONLayer): Geometry {
+  if (layer.type === 'point') return { type: 'Point', coordinates: layer.coordinates[0]! }
+  if (layer.type === 'line') return { type: 'LineString', coordinates: layer.coordinates }
+
+  const ring = [...layer.coordinates]
+  const first = ring[0]
+  const last = ring[ring.length - 1]
+  if (first && last && (first[0] !== last[0] || first[1] !== last[1])) ring.push(first)
+  return { type: 'Polygon', coordinates: [ring] }
 }
 
 function mapboxLayerType(shape: GeoJSONShape): 'circle' | 'line' | 'fill' {
@@ -59,28 +54,28 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
       style: 'mapbox://styles/mapbox/empty-v9'
     }"
   >
-    <MapboxTiandituLayer :layer="basemap.layer" :annotation="basemap.annotation" />
+    <MapboxTiandituLayer :layer="state.basemap.layer" :annotation="state.basemap.annotation" />
 
     <MapboxLayer
-      v-if="adminBoundary"
-      :key="`admin-${adminBoundary.name}`"
+      v-if="state.adminBoundary"
+      :key="`admin-${state.adminBoundary.name}`"
       layer-id="admin-boundary"
       type="fill"
-      :source="{ type: 'geojson', data: toGeometryFeature(adminBoundary.boundary) }"
+      :source="{ type: 'geojson', data: toFeatureCollection(state.adminBoundary.boundary) }"
       :paint="{ 'fill-color': BOUNDARY_COLOR, 'fill-opacity': 0.15, 'fill-outline-color': BOUNDARY_COLOR }"
     />
 
     <MapboxLayer
-      v-if="route"
+      v-if="state.route"
       layer-id="route-line"
       type="line"
-      :source="{ type: 'geojson', data: toGeometryFeature(route) }"
+      :source="{ type: 'geojson', data: toFeatureCollection(state.route) }"
       :layout="{ 'line-cap': 'round', 'line-join': 'round' }"
       :paint="{ 'line-color': ROUTE_COLOR, 'line-width': 5 }"
     />
 
     <MapboxBufferCircle
-      v-for="circle in bufferCircles"
+      v-for="circle in state.bufferCircles"
       :key="circle.id"
       :center="[circle.longitude, circle.latitude]"
       :radius="circle.radius"
@@ -88,17 +83,17 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
     />
 
     <MapboxLayer
-      v-for="layer in geojsonLayers"
+      v-for="layer in state.geojsonLayers"
       :key="layer.id"
       :layer-id="layer.id"
       :type="mapboxLayerType(layer.type)"
-      :source="{ type: 'geojson', data: toFeatureCollection(layer) }"
+      :source="{ type: 'geojson', data: toFeatureCollection(shapeGeometry(layer)) }"
       :layout="layer.type === 'line' ? { 'line-cap': 'round', 'line-join': 'round' } : {}"
       :paint="layerPaint(layer)"
     />
 
     <MapboxMarker
-      v-for="marker in markers"
+      v-for="marker in state.markers"
       :key="marker.id"
       :lnglat="[marker.longitude, marker.latitude]"
     >
@@ -110,9 +105,9 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
     </MapboxMarker>
 
     <MapboxMarker
-      v-for="poi in pois"
+      v-for="poi in state.pois"
       :key="poi.id"
-      :lnglat="[poi.longitude, poi.latitude]"
+      :lnglat="poi.location"
     >
       <div
         class="rounded-sm rotate-45 size-2.5 border-2 border-white shadow"

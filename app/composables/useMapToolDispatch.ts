@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import type { UIMessage } from 'ai'
 import { getToolName, isToolUIPart } from 'ai'
 import type { Workspace } from '#shared/utils/workspace'
+import { getMapTool } from '#shared/utils/map-tools'
 
 const HANDLED = new Set(Object.keys(MAP_TOOL_APPLICATORS))
 
@@ -11,11 +12,18 @@ interface DispatchItem {
   output: unknown
 }
 
-// 跳过错误回显（execute 捕获异常返回 { error }）与解析失败的畸形输出，避免把 undefined/NaN 注入地图
-function parseOutput(app: MapToolApplicator, output: unknown): unknown | null {
+/**
+ * 按契约校验工具回显，非法输出返回 null 由调用方跳过。
+ *
+ * `'error' in output` 不是 safeParse 的冗余前置检查：execute 捕获异常后回显 { error }，
+ * 而 remove-marker 的输出字段全为 optional，`{ error: '...' }` 剥离未知键后是合法空对象、
+ * 能通过 z.object 校验，进而误触发「移除最近一个标注」。
+ */
+function parseOutput(name: string, output: unknown): unknown | null {
   if (output && typeof output === 'object' && 'error' in output) return null
-  const result = app.output.safeParse(output)
-  return result.success ? result.data : null
+
+  const result = getMapTool(name)?.output?.safeParse(output)
+  return result?.success ? result.data : null
 }
 
 export function useMapToolDispatch(
@@ -23,16 +31,16 @@ export function useMapToolDispatch(
   workspace: Ref<Workspace>,
   chatId: Ref<string>
 ) {
-  const store = useMapWorkspace()
+  const state = useMapWorkspace()
   // setup 阶段一次性构造：组合式内部 inject()，在 watch 回调里构造会脱离同步栈触发 Vue 警告
   const ctx: MapEffectContext = {
     camera: useMapboxCamera({ mapId: MAP_ID }),
     mapExport: useMapExport({ mapId: MAP_ID })
   }
-  // 相机/动作为一次性副作用，按 toolCallId 去重；bulkApplied 区分「会话首屏批量落位」与「流式实时」
-  const firedEffects = new Set<string>()
-  let bulkApplied = false
-  // 状态签名：流式期每 token 都会触发 recompute，仅在归约结果真正变化时才整体写入，避免无谓渲染
+
+  // 已触发过副作用的 toolCallId；null 表示当前会话尚未水合，下一次归约按「首屏批量落位」处理
+  let seen: Set<string> | null = null
+  // 状态签名：流式期每 token 都会触发 recompute，仅在归约结果真正变化时才整体写入
   let lastStateKey = ''
 
   function collect(): DispatchItem[] {
@@ -49,60 +57,54 @@ export function useMapToolDispatch(
     return items
   }
 
+  function fireEffect(item: DispatchItem, animate: boolean) {
+    const applicator = MAP_TOOL_APPLICATORS[item.name]
+    if (!applicator?.effect) return
+    const output = parseOutput(item.name, item.output)
+    if (output === null) return
+    applicator.effect(ctx, output as never, animate)
+  }
+
   function recompute() {
     if (workspace.value !== 'map') return
 
     const items = collect()
 
-    // 状态类：从当前全部消息整体归约后一次性写入 → 切换会话/编辑/重生成/删除均无累积泄漏
+    // 状态 = 当前全部消息的纯归约：切换会话 / 编辑 / 重生成 / 删除消息都自动收敛，无累积泄漏
     const draft = createMapWorkspaceState()
     for (const item of items) {
-      const app = MAP_TOOL_APPLICATORS[item.name]
-      if (!app || app.kind !== 'state') continue
-      const output = parseOutput(app, item.output)
+      const applicator = MAP_TOOL_APPLICATORS[item.name]
+      if (!applicator?.reduce) continue
+      const output = parseOutput(item.name, item.output)
       if (output === null) continue
-      app.reduce(draft, output)
+      applicator.reduce(draft, output as never)
     }
     const stateKey = JSON.stringify(draft)
     if (stateKey !== lastStateKey) {
       lastStateKey = stateKey
-      store.setState(draft)
+      state.value = draft
     }
 
-    // 相机/动作类：仅对新出现的 toolCallId 触发一次
-    if (!bulkApplied) {
-      bulkApplied = true
-      // 会话首屏批量落位：相机仅取最后一个且不带动画，动作只标记不重放（避免重复下载）
-      let lastCamera: { app: EffectApplicator, output: unknown } | null = null
-      for (const item of items) {
-        const app = MAP_TOOL_APPLICATORS[item.name]
-        if (!app || app.kind === 'state') continue
-        firedEffects.add(item.id)
-        if (app.kind !== 'camera') continue
-        const output = parseOutput(app, item.output)
-        if (output !== null) lastCamera = { app, output }
-      }
-      if (lastCamera) lastCamera.app.effect(ctx, lastCamera.output, false)
+    // 会话首屏批量落位：相机只取最后一个且不带动画；导出这类动作只标记不重放，避免重复下载
+    if (seen === null) {
+      seen = new Set(items.map(item => item.id))
+      const last = items.findLast(item => MAP_TOOL_APPLICATORS[item.name]?.replayOnLoad)
+      if (last) fireEffect(last, false)
       return
     }
 
-    // 流式实时：新工具输出即时应用（相机带动画）
+    // 流式实时：新出现的工具输出即时应用，相机带动画
     for (const item of items) {
-      const app = MAP_TOOL_APPLICATORS[item.name]
-      if (!app || app.kind === 'state' || firedEffects.has(item.id)) continue
-      firedEffects.add(item.id)
-      const output = parseOutput(app, item.output)
-      if (output === null) continue
-      app.effect(ctx, output, true)
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+      fireEffect(item, true)
     }
   }
 
-  // 派发驱动纯客户端 mapbox 地图，SSR 期执行会污染共享 useState 引发 hydration 不匹配，故仅客户端注册
+  // 派发驱动纯客户端 mapbox 实例，SSR 期执行会污染共享 useState 引发 hydration 不匹配
   if (import.meta.client) {
-    // 切换会话：重置一次性副作用追踪，下一次消息归约按「首屏批量落位」重放目标会话
     watch(chatId, () => {
-      firedEffects.clear()
-      bulkApplied = false
+      seen = null
     })
     watchEffect(recompute)
   }

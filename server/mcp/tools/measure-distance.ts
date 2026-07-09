@@ -1,5 +1,3 @@
-import { z } from 'zod'
-
 const EARTH_RADIUS_M = 6371008.8
 
 function haversineMeters([lng1, lat1]: [number, number], [lng2, lat2]: [number, number]): number {
@@ -12,17 +10,8 @@ function haversineMeters([lng1, lat1]: [number, number], [lng2, lat2]: [number, 
 }
 
 export default defineMcpTool({
-  description: '计算一条路径（多个 WGS84 经纬度点顺序连接）的总距离，纯服务端计算，不改动地图。用于「这条路线多长 / 两地之间多远」等请求。',
-  inputSchema: {
-    coordinates: z.array(z.tuple([
-      z.number().min(-180).max(180),
-      z.number().min(-90).max(90)
-    ]))
-      .min(2)
-      .describe('WGS84 坐标序列 [[经度, 纬度], ...]，按经过顺序排列，至少 2 个点')
-  },
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  handler(input) {
+  ...mcpToolFrom('measure-distance'),
+  handler: (input) => {
     const points = input.coordinates as [number, number][]
     let meters = 0
     for (let i = 1; i < points.length; i++) {

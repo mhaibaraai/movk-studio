@@ -34,12 +34,13 @@ export interface MapBufferCircle {
   color?: string
 }
 
+// 对齐 @movk/mapbox 的 Poi 形状，省去 handler 侧的字段搬运
 export interface MapPoi {
   id: string
   name: string
   address?: string | null
-  longitude: number
-  latitude: number
+  location: [number, number]
+  distance?: string | null
 }
 
 export interface MapAdminBoundary {
@@ -58,7 +59,7 @@ export interface MapWorkspaceState {
   route?: LineString
 }
 
-// 全部工作区状态的初始/复位值；派发器每次重算基于此构造草稿
+// 全部状态的初始 / 复位值；派发器每次重算都基于它构造草稿
 export function createMapWorkspaceState(): MapWorkspaceState {
   return {
     markers: [],
@@ -71,27 +72,11 @@ export function createMapWorkspaceState(): MapWorkspaceState {
   }
 }
 
-// map 工作区共享状态：派发器以「消息归约」整体写入，map.vue 声明式渲染消费
+/**
+ * map 工作区共享状态：派发器把「当前全部消息的工具输出」归约成完整状态后整体写入，
+ * map.vue 声明式渲染消费。单一 useState 承载整个状态对象——新增一个状态字段只需
+ * 改 MapWorkspaceState 与 createMapWorkspaceState 两处。
+ */
 export function useMapWorkspace() {
-  const initial = createMapWorkspaceState()
-  const markers = useState<MapMarker[]>('map-workspace-markers', () => initial.markers)
-  const basemap = useState<MapBasemapState>('map-workspace-basemap', () => initial.basemap)
-  const geojsonLayers = useState<MapGeoJSONLayer[]>('map-workspace-geojson', () => initial.geojsonLayers)
-  const bufferCircles = useState<MapBufferCircle[]>('map-workspace-buffers', () => initial.bufferCircles)
-  const pois = useState<MapPoi[]>('map-workspace-pois', () => initial.pois)
-  const adminBoundary = useState<MapAdminBoundary | undefined>('map-workspace-admin', () => initial.adminBoundary)
-  const route = useState<LineString | undefined>('map-workspace-route', () => initial.route)
-
-  // 整体替换：派发器每次从消息归约出完整状态后一次性写入，天然幂等、无累积泄漏
-  function setState(next: MapWorkspaceState) {
-    markers.value = next.markers
-    geojsonLayers.value = next.geojsonLayers
-    bufferCircles.value = next.bufferCircles
-    basemap.value = next.basemap
-    pois.value = next.pois
-    adminBoundary.value = next.adminBoundary
-    route.value = next.route
-  }
-
-  return { markers, basemap, geojsonLayers, bufferCircles, pois, adminBoundary, route, setState }
+  return useState<MapWorkspaceState>('map-workspace', createMapWorkspaceState)
 }
