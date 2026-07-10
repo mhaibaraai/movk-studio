@@ -1,6 +1,6 @@
 # AI 工具调用参考资料：@nuxtjs/mcp-toolkit 落地 map 工作区工具
 
-> 面向 movk-studio「GIS Copilot」工具调用能力的实现参考。整理手写 tools 与 mcp-toolkit 两种方案的对比、`@movk/mapbox` 真实可调用接口清单，20 个 map 工具的落地结果与契约层架构，以及若干真实 bug 的根因排查记录。当前形态：契约（`shared/utils/map-tools/`）+ handler（`server/mcp/tools/`）+ applicator（`app/utils/map-tool-applicators.ts`）三层，天地图能力全部经 `@movk/mapbox@1.1.0` 的 `createTianditu` 客户端。绘制类工具仍是设计阶段。
+> 面向 movk-studio「GIS Copilot」工具调用能力的实现参考。整理手写 tools 与 mcp-toolkit 两种方案的对比、`@movk/mapbox` 真实可调用接口清单，22 个 map 工具的落地结果与契约层架构，以及若干真实 bug 的根因排查记录。当前形态：契约（`shared/utils/map-tools/`）+ handler（`server/mcp/tools/`）+ applicator（`app/utils/map-tool-applicators.ts`）三层，天地图能力全部经 `createTianditu` 客户端。绘制类工具（Tier 3）已随包侧的 `useMapboxDraw({ mapId })` 跨树能力一并落地，见 8。
 
 ## 1. 背景
 
@@ -60,13 +60,20 @@ useMapboxCamera({ mapId }) // → { flyTo, easeTo, jumpTo, fitBounds }
 
 因此：AI 工具产生的"加标注"、"切换底图"这类结果，必须写入一份**共享响应式状态**，再由 `map.vue` 的模板声明式地渲染（`v-for`/`v-if` 绑定该状态）。这是唯一可行路径，不是设计偏好。
 
-### 3.3 绘制 —— 无 id 逃生舱口，本轮无法从 Copilot 驱动
+### 3.3 绘制 —— 有 id 逃生舱口（已接入，见 8）
 
 ```ts
-useMapboxDraw() // 必须在 <MapboxDrawControl> 子树内调用，否则抛错
+useMapboxDraw({ mapId }) // → { draw, whenReady, changeMode, add, deleteAll, setFeatureProperty, getAll, getMode }
 ```
 
-没有类似 `useMapbox(id)` 的按 id 查找方式，`CopilotPanel` 够不到。要支持"AI 让我画一个多边形"，需要先给 `map.vue` 设计一层 provide/emit 桥接（把 draw 指令从外部传进 `MapboxDrawControl` 子树），是一项独立的后续工作，本轮不做。
+1.1.x 时 `useMapboxDraw()` 只有 `inject`，子树外抛错，`CopilotPanel` 够不到。1.2.0 起它返回**绘制上下文对象**，传 `mapId` 即可在 `<MapboxDrawControl>` 子树外驱动，与 3.1 的相机同构：
+
+- 写操作（`changeMode` / `add` / `deleteAll` / `setFeatureProperty`）返回 `Promise`，内部等待绘制实例就绪后执行，并同步控件的 `v-model:features` / `v-model:mode`。
+- 读操作（`getAll` / `getMode`）同步返回，未就绪时为 `undefined`（它们常在 `computed` 里反复求值，故不告警）。
+- 目标地图必须显式设置 `map-id`——没设的地图不进注册表，`map.vue` 已有 `map-id="workspace-map"`。
+- 未注册控件时：写操作 `logger.warn` 空操作，`whenReady()` **reject 明确错误**而非返回永不 resolve 的 promise（刻意规避 5 记录的静默悬挂）。
+
+> ⚠️ 破坏性变更：`useMapboxDraw()` 的返回值由 `ShallowRef<MapboxDraw | undefined>` 变为上下文对象，裸实例移到 `draw` 字段。顺带修掉了「裸实例调 `deleteAll()` 不回写 `v-model:features`」的模型失配——同步逻辑现在只有上下文一处实现，`defineExpose` 与跨树门面共用。
 
 ### 3.4 纯函数与 Web 服务 —— 真正能在服务端完整执行的能力
 
@@ -87,7 +94,7 @@ import { createTianditu } from '@movk/mapbox/utils/tianditu-client'
 
 > POI 查询原本记录在这一节（`@movk/mapbox` 没有 POI 搜索 composable），现已由包侧的 `createTianditu` 客户端提供（见 4.3），不再是无对应能力。
 
-## 4. 落地结果（20 个工具，已实现）
+## 4. 落地结果（22 个工具，已实现）
 
 ### 4.1 契约层：一个工具只有一个「长什么样」的答案 ✅
 
@@ -160,10 +167,10 @@ export default defineMcpTool({
 | `reverse-geocode` | `reverseGeocode()` | 无（纯信息） |
 | `get-administrative-boundary` | `administrative({boundary:true})` | `reduce`（单值替换）+ `effect` fitBounds |
 | `plan-route` | `route()` | `reduce`（单值替换）+ `effect` fitBounds |
+| `draw-shape` | echo | `effect` `changeMode`，**不** `replayOnLoad` |
+| `clear-drawing` | echo `{}` | `effect` `deleteAll`，**不** `replayOnLoad` |
 
 > 边界校验：坐标经纬度一律带 `[-180, 180]` / `[-90, 90]` 范围约束；`add-geojson` 在 handler 内按几何类型强制最少点数（line ≥ 2、polygon ≥ 3）。客户端派发前再用契约 output schema `safeParse` 兜底（见 4.4）。
-
-推迟：绘制类工具（`useMapboxDraw` 无 id 逃生舱口，见 8）。
 
 ### 4.2.1 进阶可视化四工具的三个约束 ✅
 
@@ -232,7 +239,7 @@ export default defineMcpTool({
 
 契约层：
 
-- [shared/utils/map-tools/](../../shared/utils/map-tools/) —— 20 个工具的契约（`camera` / `annotation` / `visualization` / `compute` / `tianditu` 五个域文件 + `index.ts` 汇总 `MAP_TOOLS`）
+- [shared/utils/map-tools/](../../shared/utils/map-tools/) —— 22 个工具的契约（`camera` / `annotation` / `visualization` / `compute` / `tianditu` / `draw` 六个域文件 + `index.ts` 汇总 `MAP_TOOLS`）
 - [shared/utils/workspace.ts](../../shared/utils/workspace.ts) —— `Workspace` 类型与 `WORKSPACES` 常量
 
 服务端：
@@ -241,7 +248,8 @@ export default defineMcpTool({
 - [server/utils/tools.ts](../../server/utils/tools.ts) —— mcp-toolkit → AI SDK 桥接，按契约的 `workspaces` 过滤
 - [server/utils/tianditu.ts](../../server/utils/tianditu.ts) —— `useTianditu()` 客户端单例 + `toPoiResults()`
 - [server/utils/copilot.ts](../../server/utils/copilot.ts) —— `copilotSystemPrompt` / `WORKSPACE_BRIEF.map`
-- [server/mcp/tools/](../../server/mcp/tools/) —— 20 个 handler，每个文件只剩它独有的计算
+- [server/utils/drawn-features.ts](../../server/utils/drawn-features.ts) —— `summarizeDrawnFeatures()`，手绘要素 → system prompt 摘要
+- [server/mcp/tools/](../../server/mcp/tools/) —— 22 个 handler，每个文件只剩它独有的计算
 - [server/mcp/index.ts](../../server/mcp/index.ts) —— `/mcp` 鉴权中间件
 - [server/api/chats/[id].post.ts](../../server/api/chats/%5Bid%5D.post.ts) —— 接入 `getToolsForWorkspace(chat.workspace)`
 
@@ -250,7 +258,8 @@ export default defineMcpTool({
 - [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts) —— 工具 → 「对地图做什么」（`reduce` / `effect` / `replayOnLoad`），`HANDLED` 由此派生
 - [app/composables/useMapToolDispatch.ts](../../app/composables/useMapToolDispatch.ts) —— 派发器（消息纯归约 + 副作用 fire-once + `seen` 单变量水合 / 重置 + 错误输出守卫）
 - [app/composables/useMapWorkspace.ts](../../app/composables/useMapWorkspace.ts) —— 单个 `useState` 承载全部地图状态
-- [app/pages/workspace/map.vue](../../app/pages/workspace/map.vue) —— `map-id` + 声明式渲染
+- [app/composables/useDrawnFeatures.ts](../../app/composables/useDrawnFeatures.ts) —— 手绘要素独立 `useState`（刻意不进纯归约状态，见 8.2）
+- [app/pages/workspace/map.vue](../../app/pages/workspace/map.vue) —— `map-id` + 声明式渲染 + `<MapboxDrawControl>`
 - [app/components/CopilotPanel.vue](../../app/components/CopilotPanel.vue) —— 调用 `useMapToolDispatch` 的作用域
 - [app/components/chat/message/MessageContent.vue](../../app/components/chat/message/MessageContent.vue) —— 工具状态文案（读契约的 `status`）
 - [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts) —— Copilot 侧栏快捷提示，逐条覆盖各工具与关键参数路径
@@ -320,7 +329,19 @@ export default defineMcpTool({
 
 **共同教训**：天地图这套 Web 服务的文档质量普遍偏低（路径版本滞后、字段拼写错、响应格式漏写、JSON/XML 不统一），**每个接口接入前都必须用真实 tk 打一次真实请求、按实际响应写解析**，不能信文档示例。
 
-### 7.7 一条被写进文档又被推翻的错误结论：天地图坐标不需要 GCJ02→WGS84 转换
+### 7.7 `<MapboxDrawControl>` 必须包 `<ClientOnly>`：绘制注册表是进程级全局
+
+接入绘制控件后，dev 期每打一次 `/workspace/map` 的 SSR 请求，服务端就多出一条 `map "workspace-map" already has a <MapboxDrawControl>; the latest one takes over` 警告，且**计数随请求单调递增**（连打 3 次请求，警告从 3 条涨到 6 条）。
+
+**根因**：包的 `DrawControl.vue` 在 **`setup` 阶段**（不是 `onMounted`）调用 `registerDraw(drawContext)`，而 `draw-registry.ts` 的注册表是模块级 `shallowReactive(Map)`——在 Node 侧即**进程级全局，跨请求共享**。注销挂在 `onUnmounted`，服务端根本不执行。于是每个 SSR 请求都往同一张全局表里塞一个新的绘制上下文，只增不减：既是内存泄漏，也让并发请求互相覆盖对方的上下文。
+
+客户端没有这个问题（注册表随页面加载重建），但这个分发链路本来就只驱动纯客户端的 mapbox 实例，SSR 期执行毫无意义——与 7.2 是同一类错误的不同表现。
+
+**修复**：`map.vue` 里把 `<MapboxDrawControl>` 包进 `<ClientOnly>`。验证方式是连打若干次 SSR 请求后警告数不再增长。
+
+> 教训与 7.2 相同：**任何只驱动浏览器实例的东西，都要挡住 SSR 执行路径**。7.2 挡的是 `watchEffect`，这里挡的是组件的 `setup`。包侧更彻底的修法是把 `registerDraw` 挪进 `onMounted`（或加 `import.meta.client` 守卫），可作为后续 issue 提给 `@movk/mapbox`。
+
+### 7.8 一条被写进文档又被推翻的错误结论：天地图坐标不需要 GCJ02→WGS84 转换
 
 本文档 4.8 节曾记录「解析出的坐标数组与 GeoJSON 同构后复用 `transformGeoJSON` 做 GCJ02→WGS84」。**这步转换本身是错的**，它给每个天地图返回的坐标引入了数百米的系统性偏移。
 
@@ -328,13 +349,56 @@ export default defineMcpTool({
 
 之所以会写错，是因为「国内地图服务 = 火星坐标」是个太顺手的先验——高德/腾讯/百度确实如此，天地图作为官方测绘服务恰恰不是。**验收方式**：对同一地名，转换版与透传版坐标差在数百米量级；把 marker 落在影像底图上目视比对，透传版才贴合实际位置。凡是「需要坐标系转换」的判断，都必须落到一次真实底图比对上，不能靠对服务商的印象推断。
 
-## 8. Tier 3 路线图（设计阶段，尚未实现）
+## 8. Tier 3 绘制类（已落地）
 
 > Tier 2 的四个进阶可视化工具（`toggle-3d-buildings` / `set-terrain` / `add-heatmap` / `add-cluster`）已落地，见 4.2 与 4.2.1，均为 `@movk/mapbox` 已有声明式组件的纯增量接入，未改包。
 >
-> 天地图接入类工具（6 个，见 4.3）同样已全部落地。包侧统一用纯 fetch 函数 + `createTianditu` 工厂、不做 `composables/useTiandituSearch.ts` 封装（唯一消费方是服务端 MCP 工具，不需要 Vue composable 这层；未来出现浏览器端直接调用场景再补）。剩下真正需要扩展包（源码在 `/Users/yixuanmiao/Projects/movk-mapbox`）的只有绘制类。
+> 天地图接入类工具（6 个，见 4.3）同样已全部落地。包侧统一用纯 fetch 函数 + `createTianditu` 工厂、不做 `composables/useTiandituSearch.ts` 封装（唯一消费方是服务端 MCP 工具，不需要 Vue composable 这层；未来出现浏览器端直接调用场景再补）。
+>
+> 绘制类曾是唯一需要扩展包（源码在 `/Users/yixuanmiao/Projects/movk-mapbox`）的一类。包侧改造见 8.1，studio 侧接入见 8.2，两侧均已完成。
 >
 > 包的 `search()` 还有 5 种未被暴露为工具的 queryType（`inView`/`polygon`/`category`/`statistics` 等）。有意不暴露：LLM 靠 description 选工具，把 queryType 概念抛给它会显著降低选择准确率，且 `inView`/`polygon` 需要客户端回传当前视野 bounds，现有架构不支持。按真实高频场景增量补窄工具即可（`search-poi-in-area` 即由 `district` queryType 包装而来）。
 
-- **`draw-*`**（交互式绘制，如"让我手动画一个多边形"；已知几何仍走 Tier 1 的 `add-geojson`，不需要这个扩展）：镜像 `useMapboxCamera({mapId})` 的注册表逃生舱口模式。当前 `src/runtime/domains/map/draw.ts` 只有 `DrawKey` inject、无注册表；`useMapboxDraw.ts` 纯 inject、子树外抛错。改法：① 新增 `src/runtime/domains/map/draw-registry.ts`（镜像 `registry.ts` 的模块级 `Map<string, ShallowRef<MapboxDraw>>`）；② `components/extensions/DrawControl.vue` 挂载时用 `useMap()` 拿到的 `ctx.id` 注册、卸载注销（一张地图一个 draw 控件，key 用父地图 map-id）；③ 扩展 `useMapboxDraw(options?: { mapId })`，传 mapId 时查注册表、否则回退 `inject(DrawKey)`（镜像 `resolve.ts` 的 `useContextResolver`）。
-- **发布流程**：包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump patch version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（契约加一条 + 新增 `server/mcp/tools/*.ts` + applicator 加一条）。`pnpm-workspace.yaml` 已有 `minimumReleaseAgeExclude: ['@movk/mapbox@1.0.1']`，说明这类自用包快速发版验证是既有工作流。
+### 8.1 包侧改造
+
+`draw-registry.ts` / `draw-context.ts` / `useMapboxDraw` 重写 / `DrawControl` 改造均已落地，单测覆盖注册注销、跨树写操作的模型回写、就绪前排队、未注册降级。**实现与本节原先的构想有四处偏差，均由实测推翻**，接入时按实际形态写：
+
+| 原构想 | 实际实现 | 原因 |
+| --- | --- | --- |
+| 注册表存 `Map<string, ShallowRef<MapboxDraw>>` | 存 `shallowReactive(Map<string, MapboxDrawContext>)` | 跨树门面的 `draw` 字段是 `computed(() => getDrawContext(id)?.draw.value)`，普通 `Map` 不触发重算 |
+| `useMapboxDraw(options?)` 仍返回 ref，复用 `resolve.ts` 的 `useContextResolver` | 返回 `MapboxDrawContext`（破坏性），跨树是延迟查表门面，未复用 `useContextResolver` | 裸 ref 让调用方自行 watch 就绪、且绕过模型同步；上下文对象把「等就绪 + 回写 v-model」收进包内 |
+| `DrawControl` 挂载时按 `ctx.id` 无条件注册 | 仅当 `getMapContext(ctx.id) === ctx`（地图显式设了 `map-id`）才注册 | 未设 `map-id` 的地图不进 map 注册表、其自动 id 外部无从知晓；且 `useId()` 计数器按 app 实例重置，无条件注册会误报 id 冲突 |
+| 未提及未注册时的行为 | 写操作 warn 空操作；读操作静默 `undefined`；`whenReady()` reject | 读操作常在 `computed` 里反复求值，告警会刷屏；`whenReady()` 悬挂即 5 记录过的坑 |
+
+### 8.2 studio 侧接入（已完成）
+
+1. **`map.vue` 挂控件**：`<MapboxDrawControl v-model:features :options="DRAW_OPTIONS">` 放进已有的 `map-id="workspace-map"` 地图内，并**包一层 `<ClientOnly>`**（否则 SSR 期就注册进进程级绘制注册表，逐请求泄漏，见 7.7）。控件按钮常驻显示——用户点按钮画和 AI 调 `draw-shape` 切模式共用同一个 draw 实例，模式切换后按钮自动同步高亮。
+2. **手绘要素不进纯归约状态**。这是本次接入唯一的架构陷阱：`MapWorkspaceState` 是「当前消息的纯归约」（见 4.4 与 7.4），每次消息变化整体重算。用户手绘的要素是**交互产物、不是任何工具输出的函数**，塞进去会在下一条消息到达时被重算清空。故由 `v-model:features` 绑 [useDrawnFeatures.ts](../../app/composables/useDrawnFeatures.ts) 这个**独立 `useState`**，与工具归约状态并列而非嵌套。两条有意为之的后果：不落库（刷新即丢，手绘是画布不是会话产物）、不随 `chatId` 重置（切换会话时用户画的东西保留）。切走 map 工作区时控件卸载，但 useState 里的数组还在，切回来时包的 `onMounted` 有 `instance.set(...)` 回填逻辑，studio 侧无需处理。
+3. **契约与 handler**：`draw-shape({ shape })` 与 `clear-drawing()`，handler 均为 echo（真正的副作用在客户端）。契约独立成第六个域文件 [draw.ts](../../shared/utils/map-tools/draw.ts)。
+4. **applicator 只写 `effect`、不写 `reduce`、不 `replayOnLoad`**：`draw-shape` 调 `changeMode`，`clear-drawing` 调 `deleteAll()`。`mapbox-gl-draw` 画完一个要素会自动退回 `simple_select`，不需要包侧或 studio 侧额外处理。不 `replayOnLoad` 是因为刷新页面不该让地图重新进入绘制态，也不该重放一次清除。
+5. **prompt 补一条选型规则**：已知几何走 `add-geojson`，只有「让我手动画」这类交互式请求才用 `draw-*`；清手绘用 `clear-drawing`，清工具添加的标注用 `remove-marker`，两者不可混用。
+
+#### 实现中与上述原计划的三处偏差
+
+| 原计划 | 实际实现 | 原因 |
+| --- | --- | --- |
+| `shape: 'point' \| 'line' \| 'polygon'` | 追加 `rectangle` / `circle` | 包导出 `movkDrawModes` 提供这两个自定义模式，框选矩形、拉一个圆是 GIS 手绘高频动作，且与 `buffer-circle`（AI 指定圆心半径）形成「交互式 vs 指令式」互补。`ellipse` / `sector` 有意不暴露：场景窄，会稀释 LLM 对 `shape` 枚举的选择准确率 |
+| 未提读取能力 | 手绘要素经 `sendMessage` body 注入 system prompt | **「读取手绘要素」做不成 MCP 工具**：handler 在服务端跑，读不到浏览器里的 draw 实例。做成 AI SDK 的 client-side tool（`onToolCall` + `addToolResult`）则要改桥接层、`useChat` 与 `onEnd` 落库路径，且 tool-result part 的持久化在当前架构下有缺口。上下文注入给 LLM 的信息完全相同，复杂度低一个数量级 |
+| 未提 | 圆 / 椭圆 / 扇形只注入 `properties`，不注入环坐标 | `draw_circle` 用 `steps: 64` 生成 **65 个顶点**（约 500 token）。把它塞给 LLM 正是 4.3 记的「几何绝不回流 LLM」反模式。这三个模式恰好在 `properties` 里写了 `center` / `radiusInM`（扇形另有 `bearing1` / `bearing2`），[summarizeDrawnFeatures](../../server/utils/drawn-features.ts) 直接读属性 |
+
+#### 手绘要素 → LLM 的上下文注入链路
+
+`CopilotPanel` 的 `prepareSendMessagesRequest` 在 `workspace === 'map'` 且手绘非空时把快照塞进 body（`DefaultChatTransport` 只构造一次，回调闭包读 ref，每次发送拿到的都是当前值）→ `[id].post.ts` 校验后交给 `summarizeDrawnFeatures()` → 拼进 `copilotSystemPrompt(workspace, drawnBrief)`。
+
+摘要规则：圆 / 椭圆 / 扇形描述其参数；其余几何顶点数 ≤ 30 时给完整坐标（精度 6 位），超出只给顶点数与包围盒。于是 LLM 拿到线的坐标可直接调 `measure-distance`，拿到多边形坐标可调 `add-geojson` 转成正式图层，拿到圆的 `radiusInM` 直接口述——闭环成立，且没有一个大几何穿过 tool-call JSON。
+
+system prompt 不落库，所以 LLM 每轮看到的都是**当前**手绘快照，历史轮次不残留旧快照；`regenerate()` 走同一条 transport 路径，行为一致。
+
+#### 两处依赖细节
+
+- `movkDrawModes` 经包的官方别名导入：`import { movkDrawModes } from '#mapbox/draw-modes'`（模块在 `setup` 里注册 `nuxt.options.alias['#mapbox'] = resolve('./runtime')`）。它同时也被 `addImports` 登记为自动导入，但显式 import 与既有的 `heatmapPaint` 写法一致，更易追溯。
+- `DRAW_OPTIONS.modes` 必须合并 `MapboxDraw.modes`——`mapbox-gl-draw` 的 `options.modes` 是**整体替换**而非合并，只传 `movkDrawModes` 会丢掉全部内置模式。为此 studio 需直接 `import MapboxDraw from '@mapbox/mapbox-gl-draw'`，而该包不带类型声明，须补 `@types/mapbox__mapbox-gl-draw` 到 devDependencies（包侧同样这么做），否则 `pnpm typecheck` 报 `TS7016`。
+
+### 8.3 包侧发布流程
+
+包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（契约加一条 + 新增 `server/mcp/tools/*.ts` + applicator 加一条）。`pnpm-workspace.yaml` 已有 `minimumReleaseAgeExclude: ['@movk/mapbox@1.0.1']`，说明这类自用包快速发版验证是既有工作流。
