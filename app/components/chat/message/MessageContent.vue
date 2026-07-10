@@ -2,6 +2,7 @@
 import type { UIMessage } from 'ai'
 import { getToolName, isReasoningUIPart, isTextUIPart, isToolUIPart } from 'ai'
 import { isPartStreaming, isToolStreaming } from '@nuxt/ui/utils/ai'
+import { getMapTool } from '#shared/utils/map-tools'
 
 defineProps<{
   message: UIMessage
@@ -13,25 +14,16 @@ const emit = defineEmits<{
   cancelEdit: []
 }>()
 
-// map 工具调用状态的中文文案：[进行中, 已完成]
-const TOOL_STATUS_LABELS: Record<string, [string, string]> = {
-  'fly-to': ['正在定位…', '已定位到目标位置'],
-  'fit-bounds': ['正在缩放…', '已缩放到目标范围'],
-  'set-basemap': ['正在切换底图…', '已切换底图'],
-  'add-marker': ['正在添加标注…', '已添加标注'],
-  'remove-marker': ['正在移除标注…', '已移除标注'],
-  'buffer-circle': ['正在绘制范围圈…', '已绘制范围圈'],
-  'add-geojson': ['正在绘制图层…', '已绘制图层'],
-  'export-image': ['正在导出图片…', '已导出地图图片'],
-  'measure-distance': ['正在计算距离…', '距离计算完成'],
-  'convert-coordinate': ['正在转换坐标…', '坐标转换完成']
-}
-
+// 工具调用状态文案取自契约的 status: [进行中, 已完成]
 function mapToolStatusText(part: Parameters<typeof getToolName>[0]): string {
   const name = getToolName(part)
-  const labels = TOOL_STATUS_LABELS[name]
-  if (!labels) return name
-  return part.state === 'output-available' ? labels[1] : labels[0]
+  const status = getMapTool(name)?.status
+  if (!status) return name
+  return part.state === 'output-available' ? status[1] : status[0]
+}
+
+function mapToolIcon(part: Parameters<typeof getToolName>[0]): string | undefined {
+  return getMapTool(getToolName(part))?.icon
 }
 </script>
 
@@ -51,6 +43,7 @@ function mapToolStatusText(part: Parameters<typeof getToolName>[0]): string {
       v-else-if="isToolUIPart(part)"
       :text="mapToolStatusText(part)"
       :streaming="isToolStreaming(part)"
+      :icon="mapToolIcon(part)"
       chevron="trailing"
     />
 

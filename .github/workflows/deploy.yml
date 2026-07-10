@@ -61,10 +61,9 @@ jobs:
       - name: Build
         env:
           NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
-          NUXT_MAPBOX_TOKEN: ${{ secrets.NUXT_MAPBOX_TOKEN }}
-          NUXT_TIANDITU_TOKEN: ${{ secrets.NUXT_TIANDITU_TOKEN }}
           ALIBABA_API_KEY: ${{ secrets.ALIBABA_API_KEY }}
-          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          NUXT_PUBLIC_MAPBOX_ACCESS_TOKEN: ${{ secrets.NUXT_PUBLIC_MAPBOX_ACCESS_TOKEN }}
+          NUXT_PUBLIC_MAPBOX_TIANDITU_TOKEN: ${{ secrets.NUXT_PUBLIC_MAPBOX_TIANDITU_TOKEN }}
         run: pnpm build
 
       - name: Log in to GHCR

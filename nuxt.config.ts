@@ -20,6 +20,10 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
+  runtimeConfig: {
+    tiandituApiToken: ''
+  },
+
   routeRules: {
     '/mcp/**': {
       // @ts-expect-error nuxt-csurf 运行时读取 routeRules.csurf 关闭 CSRF；Nuxt 4 新 nitro 下该类型增强未合并
@@ -79,11 +83,6 @@ export default defineNuxtConfig({
       prefix: 'custom',
       dir: resolve('./app/assets/icons')
     }]
-  },
-
-  mapbox: {
-    accessToken: process.env.NUXT_MAPBOX_TOKEN,
-    tiandituToken: process.env.NUXT_TIANDITU_TOKEN
   },
 
   mcp: {
