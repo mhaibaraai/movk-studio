@@ -100,8 +100,11 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
       <div
         class="rounded-full size-3 border-2 border-white shadow"
         :style="{ background: marker.color ?? MARKER_COLOR }"
-        :title="marker.label ?? undefined"
       />
+
+      <template #popup>
+        {{ marker.label ?? undefined }}
+      </template>
     </MapboxMarker>
 
     <MapboxMarker
@@ -112,8 +115,11 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
       <div
         class="rounded-sm rotate-45 size-2.5 border-2 border-white shadow"
         :style="{ background: POI_COLOR }"
-        :title="[poi.name, poi.address].filter(Boolean).join(' · ')"
       />
+
+      <template #popup>
+        {{ [poi.name, poi.address].filter(Boolean).join(' · ') }}
+      </template>
     </MapboxMarker>
 
     <MapboxScaleControl />
