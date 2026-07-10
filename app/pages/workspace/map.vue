@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { FeatureCollection, Geometry } from 'geojson'
+import type { SourceSpecification } from 'mapbox-gl'
+import { heatmapPaint } from '@movk/mapbox/utils/heatmap'
 
 const state = useMapWorkspace()
 
@@ -41,6 +43,38 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
   }
   return { 'fill-color': color, 'fill-opacity': 0.25, 'fill-outline-color': color }
 }
+
+// empty-v9 底样式不含官方 composite 源，3D 建筑的矢量数据需单独挂载
+const STREETS_SOURCE_ID = 'mapbox-streets'
+const STREETS_SOURCE: SourceSpecification = { type: 'vector', url: 'mapbox://mapbox.mapbox-streets-v8' }
+
+const HEATMAP_WEIGHT_PROPERTY = 'w'
+
+const heatmapData = computed<FeatureCollection>(() => ({
+  type: 'FeatureCollection',
+  features: (state.value.heatmap?.points ?? []).map(([longitude, latitude, weight]) => ({
+    type: 'Feature',
+    properties: { [HEATMAP_WEIGHT_PROPERTY]: weight },
+    geometry: { type: 'Point', coordinates: [longitude, latitude] }
+  }))
+}))
+
+// heatmapPaint 的 weightProperty 缺省为 'temperature'，必须显式指向上面写入的属性名
+const heatmapPaintSpec = computed(() => heatmapPaint({
+  weightProperty: HEATMAP_WEIGHT_PROPERTY,
+  weightRange: state.value.heatmap?.weightRange,
+  radius: state.value.heatmap?.radius,
+  opacity: state.value.heatmap?.opacity
+}))
+
+const clusterData = computed<FeatureCollection>(() => ({
+  type: 'FeatureCollection',
+  features: (state.value.cluster?.points ?? []).map(coordinates => ({
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Point', coordinates }
+  }))
+}))
 </script>
 
 <template>
@@ -55,6 +89,37 @@ function layerPaint(layer: MapGeoJSONLayer): Record<string, unknown> {
     }"
   >
     <MapboxTiandituLayer :layer="state.basemap.layer" :annotation="state.basemap.annotation" />
+
+    <MapboxTerrain v-if="state.terrain" :exaggeration="state.terrain.exaggeration" />
+
+    <MapboxSource
+      v-if="state.buildings3d"
+      :source-id="STREETS_SOURCE_ID"
+      :source="STREETS_SOURCE"
+    >
+      <MapboxBuildingLayer
+        :source="STREETS_SOURCE_ID"
+        source-layer="building"
+        :color="state.buildings3d.color"
+        :opacity="state.buildings3d.opacity"
+        :minzoom="state.buildings3d.minZoom"
+      />
+    </MapboxSource>
+
+    <MapboxLayer
+      v-if="state.heatmap"
+      :key="state.heatmap.id"
+      layer-id="heatmap"
+      type="heatmap"
+      :source="{ type: 'geojson', data: heatmapData }"
+      :paint="heatmapPaintSpec"
+    />
+
+    <MapboxClusterLayer
+      v-if="state.cluster"
+      :key="state.cluster.id"
+      :data="clusterData"
+    />
 
     <MapboxLayer
       v-if="state.adminBoundary"

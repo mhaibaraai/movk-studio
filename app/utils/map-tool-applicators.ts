@@ -138,6 +138,39 @@ export const MAP_TOOL_APPLICATORS: Record<string, MapToolApplicator> = {
     }
   }),
 
+  // 以下四个只写 reduce：立体视角属于相机，交给 fly-to 的 pitch，不在这里抢镜头。
+  // 若给它们加相机 effect，刷新页面时会顶掉派发器重放的最后一个 fly-to，位置随之丢失。
+  'toggle-3d-buildings': define('toggle-3d-buildings', {
+    reduce: (draft, o) => {
+      draft.buildings3d = o.enabled ? { color: o.color, opacity: o.opacity, minZoom: o.minZoom } : undefined
+    }
+  }),
+
+  'set-terrain': define('set-terrain', {
+    reduce: (draft, o) => {
+      draft.terrain = o.enabled ? { exaggeration: o.exaggeration } : undefined
+    }
+  }),
+
+  'add-heatmap': define('add-heatmap', {
+    reduce: (draft, o) => {
+      draft.heatmap = {
+        id: o.heatmapId,
+        points: o.points,
+        weightRange: o.weightRange,
+        radius: o.radius,
+        opacity: o.opacity,
+        label: o.label
+      }
+    }
+  }),
+
+  'add-cluster': define('add-cluster', {
+    reduce: (draft, o) => {
+      draft.cluster = { id: o.clusterId, points: o.points, label: o.label }
+    }
+  }),
+
   'export-image': define('export-image', {
     effect: (ctx, o) => ctx.mapExport.download({ fileName: o.fileName }),
     replayOnLoad: false

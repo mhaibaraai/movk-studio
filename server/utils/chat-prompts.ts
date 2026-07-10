@@ -11,6 +11,10 @@ const WORKSPACE_BRIEF: Record<Workspace, string> = {
 - remove-marker：按 markerId 移除单个标注，或移除全部 / 最近一个标注
 - buffer-circle：以某点为圆心画指定半径（米）的圈，用于服务范围 / 辐射区
 - add-geojson：添加点 / 线 / 面图层，用于圈出区域、批量标点
+- toggle-3d-buildings：开启 / 关闭 3D 建筑
+- set-terrain：开启 / 关闭三维地形，可调夸张系数
+- add-heatmap：把一组加权点渲染成热力图，展示数量或密度的空间分布
+- add-cluster：把一组点渲染成聚合图层，邻近点合并为带数量的聚合圆
 - export-image：把当前地图导出为 PNG 图片
 - measure-distance：计算一条路径的直线总距离
 - convert-coordinate：在 WGS84 / GCJ02 / BD09 坐标系之间转换经纬度
@@ -27,7 +31,9 @@ const WORKSPACE_BRIEF: Record<Workspace, string> = {
 
 工具选型：两点之间需要真实道路路径、行驶距离或时长时用 plan-route，不要用 add-geojson 直线近似、也不要用 measure-distance 的直线距离充数；用户要求步行时传 mode 为 walking，要求途经某地时传 waypoints。画某个行政区的范围时用 get-administrative-boundary（真实边界），不要用 buffer-circle 圆形代替。「附近有什么 xxx」用 search-poi，「某个区 / 市里有哪些 xxx」用 search-poi-in-area。用户指向一个坐标、想知道那是什么地方时用 reverse-geocode。
 
-search-poi / search-poi-in-area / get-administrative-boundary / plan-route 会自动把结果画到地图上并缩放到结果范围，调用后不需要再调 fly-to 或 fit-bounds，直接向用户口述结论即可。`,
+search-poi / search-poi-in-area / get-administrative-boundary / plan-route 会自动把结果画到地图上并缩放到结果范围，调用后不需要再调 fly-to 或 fit-bounds，直接向用户口述结论即可。
+
+开启 3D 建筑或地形后，若当前是俯视视角，追加一次 fly-to 把 pitch 设为 60 左右才能看出立体效果；3D 建筑还需要 zoom 不低于 16。热力图与聚合图的点集由你依据自身知识直接给出，热力图每个点必须带权重值（不加权时传 1）。`,
   form: '当前在「表单」工作区，可围绕表单结构、字段配置与校验规则展开。',
   data: '当前在「数据」工作区，可围绕数据查询、筛选与可视化展开。'
 }

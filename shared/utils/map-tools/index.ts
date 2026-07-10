@@ -2,6 +2,7 @@ import type { ZodType, z } from 'zod'
 import type { MapToolContract } from './types'
 import { CAMERA_TOOLS } from './camera'
 import { ANNOTATION_TOOLS } from './annotation'
+import { VISUALIZATION_TOOLS } from './visualization'
 import { COMPUTE_TOOLS } from './compute'
 import { TIANDITU_TOOLS } from './tianditu'
 
@@ -15,6 +16,7 @@ export type { MapToolContract, MapToolAnnotations } from './types'
 export const MAP_TOOLS = {
   ...CAMERA_TOOLS,
   ...ANNOTATION_TOOLS,
+  ...VISUALIZATION_TOOLS,
   ...COMPUTE_TOOLS,
   ...TIANDITU_TOOLS
 }
