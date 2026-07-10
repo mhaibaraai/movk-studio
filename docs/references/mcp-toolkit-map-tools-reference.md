@@ -1,6 +1,6 @@
 # AI 工具调用参考资料：@nuxtjs/mcp-toolkit 落地 map 工作区工具
 
-> 面向 movk-studio「GIS Copilot」工具调用能力的实现参考。整理手写 tools 与 mcp-toolkit 两种方案的对比、`@movk/mapbox` 真实可调用接口清单，16 个 map 工具的落地结果与契约层架构，以及若干真实 bug 的根因排查记录。当前形态：契约（`shared/utils/map-tools/`）+ handler（`server/mcp/tools/`）+ applicator（`app/utils/map-tool-applicators.ts`）三层，天地图能力全部经 `@movk/mapbox@1.1.0` 的 `createTianditu` 客户端。绘制类工具仍是设计阶段。
+> 面向 movk-studio「GIS Copilot」工具调用能力的实现参考。整理手写 tools 与 mcp-toolkit 两种方案的对比、`@movk/mapbox` 真实可调用接口清单，20 个 map 工具的落地结果与契约层架构，以及若干真实 bug 的根因排查记录。当前形态：契约（`shared/utils/map-tools/`）+ handler（`server/mcp/tools/`）+ applicator（`app/utils/map-tool-applicators.ts`）三层，天地图能力全部经 `@movk/mapbox@1.1.0` 的 `createTianditu` 客户端。绘制类工具仍是设计阶段。
 
 ## 1. 背景
 
@@ -87,7 +87,7 @@ import { createTianditu } from '@movk/mapbox/utils/tianditu-client'
 
 > POI 查询原本记录在这一节（`@movk/mapbox` 没有 POI 搜索 composable），现已由包侧的 `createTianditu` 客户端提供（见 4.3），不再是无对应能力。
 
-## 4. 落地结果（16 个工具，已实现）
+## 4. 落地结果（20 个工具，已实现）
 
 ### 4.1 契约层：一个工具只有一个「长什么样」的答案 ✅
 
@@ -101,7 +101,7 @@ import { createTianditu } from '@movk/mapbox/utils/tianditu-client'
 | 它在服务端算什么 | [server/mcp/tools/](../../server/mcp/tools/) 的 handler |
 | 它对地图做什么 | [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts) |
 
-契约按域分文件（`camera.ts` / `annotation.ts` / `compute.ts` / `tianditu.ts`），[index.ts](../../shared/utils/map-tools/index.ts) 汇总为 `MAP_TOOLS`：
+契约按域分文件（`camera.ts` / `annotation.ts` / `visualization.ts` / `compute.ts` / `tianditu.ts`），[index.ts](../../shared/utils/map-tools/index.ts) 汇总为 `MAP_TOOLS`：
 
 ```ts
 export interface MapToolContract {
@@ -147,6 +147,10 @@ export default defineMcpTool({
 | `remove-marker` | echo | `reduce` |
 | `buffer-circle` | 生成 circleId | `reduce`（累加） |
 | `add-geojson` | 校验最少点数 + 生成 layerId | `reduce`（累加） |
+| `toggle-3d-buildings` | echo | `reduce`（单值替换，关闭时置空） |
+| `set-terrain` | 缺省夸张系数 1.5 | `reduce`（单值替换，关闭时置空） |
+| `add-heatmap` | 生成 heatmapId + 求权重上界 | `reduce`（单值替换） |
+| `add-cluster` | 生成 clusterId | `reduce`（单值替换） |
 | `export-image` | 缺省文件名 | `effect` 动作，**不** `replayOnLoad` |
 | `measure-distance` | haversine 直线距离 | 无（纯信息） |
 | `convert-coordinate` | `transformPoint`（包） | 无（纯信息） |
@@ -159,7 +163,15 @@ export default defineMcpTool({
 
 > 边界校验：坐标经纬度一律带 `[-180, 180]` / `[-90, 90]` 范围约束；`add-geojson` 在 handler 内按几何类型强制最少点数（line ≥ 2、polygon ≥ 3）。客户端派发前再用契约 output schema `safeParse` 兜底（见 4.4）。
 
-推迟：绘制类工具（`useMapboxDraw` 无 id 逃生舱口，见 8.2）。
+推迟：绘制类工具（`useMapboxDraw` 无 id 逃生舱口，见 8）。
+
+### 4.2.1 进阶可视化四工具的三个约束 ✅
+
+1. **`MapboxBuildingLayer` 在 `empty-v9` 底样式下静默无效**。它默认读 `composite` / `building` 矢量源（见包内 `utils/building.ts` 的 `buildingLayerSpec`，注释已写明「天地图等空样式下无效」），而 [map.vue](../../app/pages/workspace/map.vue) 的底样式是 `mapbox://styles/mapbox/empty-v9` + 天地图栅格瓦片，压根没有这个源——挂上去不报错、也不出建筑。修复是用 `<MapboxSource>` 额外挂 `mapbox://mapbox.mapbox-streets-v8`（其 `building` 图层带 `height` / `min_height` / `extrude` 属性），再把 `source` / `sourceLayer` 指向它。
+2. **`heatmapPaint()` 的 `weightProperty` 缺省是 `'temperature'`**。它来自 `@movk/mapbox/utils/heatmap`（utils 非自动导入，须显式 import；组件才是全局的）。map.vue 写进 feature 的属性名是 `w`，若不显式传 `weightProperty`，`['get', 'temperature']` 取到 `undefined`，插值出 `NaN`，整张热力图不显示。handler 侧同理：权重全为 0 时 `weightRange` 退化成 `[0, 0]`，线性插值除零，故兜底为 `[0, 1]`。
+3. **这四个工具全部只写 `reduce`、不写 `effect`**。3D 建筑与地形只在 `pitch > 0` 时才看得出效果（建筑还要求 `zoom ≥ minzoom`，缺省 15），但倾斜相机不归它们管——交给已有的 `fly-to`，由 prompt 指导 AI 追加调用。原因不是洁癖：派发器水合时**只重放最后一个 `replayOnLoad` 的副作用**（见 4.4），若给 toggle 类工具加相机 effect，刷新页面时它会顶掉真正的 `fly-to`，视角对了、位置却丢了。
+
+> 已知缺口：`add-heatmap` / `add-cluster` 没有对应的移除工具（两个 toggle 自带 `enabled: false` 关闭路径）。用户说「去掉热力图」时 AI 无工具可用。后续可考虑一个统一的 `clear-map({ targets })`，同时收编 `remove-marker` 的 `all` 分支。
 
 ### 4.3 天地图工具：`createTianditu` 客户端 + studio 薄适配 ✅
 
@@ -220,7 +232,7 @@ export default defineMcpTool({
 
 契约层：
 
-- [shared/utils/map-tools/](../../shared/utils/map-tools/) —— 16 个工具的契约（`camera` / `annotation` / `compute` / `tianditu` 四个域文件 + `index.ts` 汇总 `MAP_TOOLS`）
+- [shared/utils/map-tools/](../../shared/utils/map-tools/) —— 20 个工具的契约（`camera` / `annotation` / `visualization` / `compute` / `tianditu` 五个域文件 + `index.ts` 汇总 `MAP_TOOLS`）
 - [shared/utils/workspace.ts](../../shared/utils/workspace.ts) —— `Workspace` 类型与 `WORKSPACES` 常量
 
 服务端：
@@ -229,7 +241,7 @@ export default defineMcpTool({
 - [server/utils/tools.ts](../../server/utils/tools.ts) —— mcp-toolkit → AI SDK 桥接，按契约的 `workspaces` 过滤
 - [server/utils/tianditu.ts](../../server/utils/tianditu.ts) —— `useTianditu()` 客户端单例 + `toPoiResults()`
 - [server/utils/copilot.ts](../../server/utils/copilot.ts) —— `copilotSystemPrompt` / `WORKSPACE_BRIEF.map`
-- [server/mcp/tools/](../../server/mcp/tools/) —— 16 个 handler，每个文件只剩它独有的计算
+- [server/mcp/tools/](../../server/mcp/tools/) —— 20 个 handler，每个文件只剩它独有的计算
 - [server/mcp/index.ts](../../server/mcp/index.ts) —— `/mcp` 鉴权中间件
 - [server/api/chats/[id].post.ts](../../server/api/chats/%5Bid%5D.post.ts) —— 接入 `getToolsForWorkspace(chat.workspace)`
 
@@ -316,26 +328,13 @@ export default defineMcpTool({
 
 之所以会写错，是因为「国内地图服务 = 火星坐标」是个太顺手的先验——高德/腾讯/百度确实如此，天地图作为官方测绘服务恰恰不是。**验收方式**：对同一地名，转换版与透传版坐标差在数百米量级；把 marker 落在影像底图上目视比对，透传版才贴合实际位置。凡是「需要坐标系转换」的判断，都必须落到一次真实底图比对上，不能靠对服务商的印象推断。
 
-## 8. Tier 2/3 路线图（设计阶段，尚未实现）
+## 8. Tier 3 路线图（设计阶段，尚未实现）
 
-Tier 1 落地前已一并设计好后续分层，记录在此供后续排期对照。
-
-### 8.1 Tier 2 —— 进阶可视化（无需改包）
-
-均为 `@movk/mapbox` 已有的声明式组件，走 `useMapWorkspace` 状态的同一模式纯增量扩展：
-
-| 工具名 | 说明 |
-| --- | --- |
-| `toggle-3d-buildings` | `MapboxBuildingLayer`（官方 composite 3D 建筑）开关 |
-| `set-terrain` | `MapboxTerrain`（raster-DEM 地形，exaggeration 夸张系数） |
-| `add-heatmap` | `MapboxLayer` heatmap（点集 → 热力图，heatmap-weight/radius/color） |
-| `add-cluster` | `MapboxClusterLayer`（大量点自动聚合） |
-
-### 8.2 Tier 3 —— 需扩展 `@movk/mapbox`（源码在 `/Users/yixuanmiao/Projects/movk-mapbox`）
-
-> 天地图接入类工具（6 个，见 4.3）已全部落地，不再是 Tier 3 待办。包侧统一用纯 fetch 函数 + `createTianditu` 工厂、不做 `composables/useTiandituSearch.ts` 封装（唯一消费方是服务端 MCP 工具，不需要 Vue composable 这层；未来出现浏览器端直接调用场景再补）。剩下真正需要扩展包的只有绘制类。
+> Tier 2 的四个进阶可视化工具（`toggle-3d-buildings` / `set-terrain` / `add-heatmap` / `add-cluster`）已落地，见 4.2 与 4.2.1，均为 `@movk/mapbox` 已有声明式组件的纯增量接入，未改包。
+>
+> 天地图接入类工具（6 个，见 4.3）同样已全部落地。包侧统一用纯 fetch 函数 + `createTianditu` 工厂、不做 `composables/useTiandituSearch.ts` 封装（唯一消费方是服务端 MCP 工具，不需要 Vue composable 这层；未来出现浏览器端直接调用场景再补）。剩下真正需要扩展包（源码在 `/Users/yixuanmiao/Projects/movk-mapbox`）的只有绘制类。
 >
 > 包的 `search()` 还有 5 种未被暴露为工具的 queryType（`inView`/`polygon`/`category`/`statistics` 等）。有意不暴露：LLM 靠 description 选工具，把 queryType 概念抛给它会显著降低选择准确率，且 `inView`/`polygon` 需要客户端回传当前视野 bounds，现有架构不支持。按真实高频场景增量补窄工具即可（`search-poi-in-area` 即由 `district` queryType 包装而来）。
 
 - **`draw-*`**（交互式绘制，如"让我手动画一个多边形"；已知几何仍走 Tier 1 的 `add-geojson`，不需要这个扩展）：镜像 `useMapboxCamera({mapId})` 的注册表逃生舱口模式。当前 `src/runtime/domains/map/draw.ts` 只有 `DrawKey` inject、无注册表；`useMapboxDraw.ts` 纯 inject、子树外抛错。改法：① 新增 `src/runtime/domains/map/draw-registry.ts`（镜像 `registry.ts` 的模块级 `Map<string, ShallowRef<MapboxDraw>>`）；② `components/extensions/DrawControl.vue` 挂载时用 `useMap()` 拿到的 `ctx.id` 注册、卸载注销（一张地图一个 draw 控件，key 用父地图 map-id）；③ 扩展 `useMapboxDraw(options?: { mapId })`，传 mapId 时查注册表、否则回退 `inject(DrawKey)`（镜像 `resolve.ts` 的 `useContextResolver`）。
-- **发布流程**：包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump patch version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（新增 `server/mcp/tools/*.ts` + `useMapToolDispatch` 分支 + `TOOL_WORKSPACES` 映射）。`pnpm-workspace.yaml` 已有 `minimumReleaseAgeExclude: ['@movk/mapbox@1.0.1']`，说明这类自用包快速发版验证是既有工作流。
+- **发布流程**：包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump patch version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（契约加一条 + 新增 `server/mcp/tools/*.ts` + applicator 加一条）。`pnpm-workspace.yaml` 已有 `minimumReleaseAgeExclude: ['@movk/mapbox@1.0.1']`，说明这类自用包快速发版验证是既有工作流。
