@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import type { FeatureCollection, Geometry } from 'geojson'
 import type { SourceSpecification } from 'mapbox-gl'
+import MapboxDraw from '@mapbox/mapbox-gl-draw'
 import { heatmapPaint } from '@movk/mapbox/utils/heatmap'
+import { movkDrawModes } from '#mapbox/draw-modes'
 
 const state = useMapWorkspace()
+const drawnFeatures = useDrawnFeatures()
+
+// 注册的模式集必须覆盖 map-tool-applicators 里 DRAW_MODE 的全部取值
+const DRAW_OPTIONS = { modes: { ...MapboxDraw.modes, ...movkDrawModes } }
 
 const MARKER_COLOR = '#f43f5e'
 const LAYER_COLOR = '#f43f5e'
@@ -186,6 +192,11 @@ const clusterData = computed<FeatureCollection>(() => ({
         {{ [poi.name, poi.address].filter(Boolean).join(' · ') }}
       </template>
     </MapboxMarker>
+
+    <!-- DrawControl 在 setup 阶段即写入进程级绘制注册表，SSR 期执行会逐请求累积且无从注销 -->
+    <ClientOnly>
+      <MapboxDrawControl v-model:features="drawnFeatures" :options="DRAW_OPTIONS" />
+    </ClientOnly>
 
     <MapboxScaleControl />
     <MapboxFullscreenControl />

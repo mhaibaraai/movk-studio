@@ -35,7 +35,8 @@ export function useMapToolDispatch(
   // setup 阶段一次性构造：组合式内部 inject()，在 watch 回调里构造会脱离同步栈触发 Vue 警告
   const ctx: MapEffectContext = {
     camera: useMapboxCamera({ mapId: MAP_ID }),
-    mapExport: useMapExport({ mapId: MAP_ID })
+    mapExport: useMapExport({ mapId: MAP_ID }),
+    draw: useMapboxDraw({ mapId: MAP_ID })
   }
 
   // 已触发过副作用的 toolCallId；null 表示当前会话尚未水合，下一次归约按「首屏批量落位」处理

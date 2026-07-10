@@ -5,6 +5,7 @@ import { ANNOTATION_TOOLS } from './annotation'
 import { VISUALIZATION_TOOLS } from './visualization'
 import { COMPUTE_TOOLS } from './compute'
 import { TIANDITU_TOOLS } from './tianditu'
+import { DRAW_TOOLS } from './draw'
 
 export type { MapToolContract, MapToolAnnotations } from './types'
 
@@ -18,7 +19,8 @@ export const MAP_TOOLS = {
   ...ANNOTATION_TOOLS,
   ...VISUALIZATION_TOOLS,
   ...COMPUTE_TOOLS,
-  ...TIANDITU_TOOLS
+  ...TIANDITU_TOOLS,
+  ...DRAW_TOOLS
 }
 
 export type MapToolName = keyof typeof MAP_TOOLS

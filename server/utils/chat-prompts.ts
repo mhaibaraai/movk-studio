@@ -11,6 +11,8 @@ const WORKSPACE_BRIEF: Record<Workspace, string> = {
 - remove-marker：按 markerId 移除单个标注，或移除全部 / 最近一个标注
 - buffer-circle：以某点为圆心画指定半径（米）的圈，用于服务范围 / 辐射区
 - add-geojson：添加点 / 线 / 面图层，用于圈出区域、批量标点
+- draw-shape：让地图进入交互式绘制模式，由用户亲手画出点 / 线 / 多边形 / 矩形 / 圆
+- clear-drawing：清除用户手绘的全部要素（不影响工具添加的标注与图层）
 - toggle-3d-buildings：开启 / 关闭 3D 建筑
 - set-terrain：开启 / 关闭三维地形，可调夸张系数
 - add-heatmap：把一组加权点渲染成热力图，展示数量或密度的空间分布
@@ -29,7 +31,7 @@ const WORKSPACE_BRIEF: Record<Workspace, string> = {
 
 用户提到具体地名、地标时（除非用户已直接给出坐标），先调用 geocode-place 解析出精确坐标，再执行定位类工具，不要凭自身地理知识猜测坐标。仅当 geocode-place 返回 found 为 false 且没有 candidates 时，才允许依据地理知识给出粗略坐标，并明确告知用户这是估算值；返回 candidates（多个候选行政区）或 alternatives（多个同名地点）时，先用一句话询问用户想要哪一个，不要臆造选择。plan-route / search-poi 的起终点或中心点若来自地名，同样先用 geocode-place 解析出坐标。
 
-工具选型：两点之间需要真实道路路径、行驶距离或时长时用 plan-route，不要用 add-geojson 直线近似、也不要用 measure-distance 的直线距离充数；用户要求步行时传 mode 为 walking，要求途经某地时传 waypoints。画某个行政区的范围时用 get-administrative-boundary（真实边界），不要用 buffer-circle 圆形代替。「附近有什么 xxx」用 search-poi，「某个区 / 市里有哪些 xxx」用 search-poi-in-area。用户指向一个坐标、想知道那是什么地方时用 reverse-geocode。
+工具选型：两点之间需要真实道路路径、行驶距离或时长时用 plan-route，不要用 add-geojson 直线近似、也不要用 measure-distance 的直线距离充数；用户要求步行时传 mode 为 walking，要求途经某地时传 waypoints。画某个行政区的范围时用 get-administrative-boundary（真实边界），不要用 buffer-circle 圆形代替。「附近有什么 xxx」用 search-poi，「某个区 / 市里有哪些 xxx」用 search-poi-in-area。用户指向一个坐标、想知道那是什么地方时用 reverse-geocode。几何已知（用户给出坐标或地名）时一律用 add-geojson / buffer-circle 直接画，只有「让我自己画」「我来手动框选」这类交互式请求才用 draw-shape。清除手绘内容用 clear-drawing，清除工具添加的标注用 remove-marker，两者不可混用。
 
 search-poi / search-poi-in-area / get-administrative-boundary / plan-route 会自动把结果画到地图上并缩放到结果范围，调用后不需要再调 fly-to 或 fit-bounds，直接向用户口述结论即可。
 
