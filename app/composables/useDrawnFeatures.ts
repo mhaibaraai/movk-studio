@@ -13,3 +13,11 @@ import type { Feature } from 'geojson'
 export function useDrawnFeatures() {
   return useState<Feature[]>('map-drawn-features', () => [])
 }
+
+/**
+ * draw-shape 指定的待用颜色：写进下一个画出的要素的 user_color 后即清空。
+ * 一次性而非持久画笔——用户自己点控件按钮画的要素不该被上一次 AI 指定的颜色染上。
+ */
+export function usePendingDrawColor() {
+  return useState<string | undefined>('map-pending-draw-color', () => undefined)
+}

@@ -8,6 +8,7 @@ export interface MapEffectContext {
   camera: ReturnType<typeof useMapboxCamera>
   mapExport: ReturnType<typeof useMapExport>
   draw: ReturnType<typeof useMapboxDraw>
+  drawColor: ReturnType<typeof usePendingDrawColor>
 }
 
 /**
@@ -190,11 +191,18 @@ export const MAP_TOOL_APPLICATORS: Record<string, MapToolApplicator> = {
   // 两个绘制工具都只写 effect 且不 replayOnLoad：刷新页面不该让地图重新进入绘制态，
   // 也不该重放一次清除。手绘要素存在 useDrawnFeatures，不属于消息归约状态
   'draw-shape': define('draw-shape', {
-    effect: (ctx, o) => ctx.draw.changeMode(DRAW_MODE[o.shape])
+    // 颜色只能等要素真正画出来才写得进去（user_color），此处先挂起，由 map.vue 的 draw.create 落地
+    effect: (ctx, o) => {
+      ctx.drawColor.value = o.color
+      ctx.draw.changeMode(DRAW_MODE[o.shape])
+    }
   }),
 
   'clear-drawing': define('clear-drawing', {
-    effect: ctx => ctx.draw.deleteAll()
+    effect: (ctx) => {
+      ctx.drawColor.value = undefined
+      ctx.draw.deleteAll()
+    }
   }),
 
   'search-poi': define('search-poi', poiApplicator),

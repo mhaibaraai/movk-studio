@@ -1,15 +1,38 @@
 <script setup lang="ts">
-import type { FeatureCollection, Geometry } from 'geojson'
+import type { Feature, FeatureCollection, Geometry } from 'geojson'
 import type { SourceSpecification } from 'mapbox-gl'
 import MapboxDraw from '@mapbox/mapbox-gl-draw'
+import { drawThemeStyles } from '@movk/mapbox/utils/draw-theme'
 import { heatmapPaint } from '@movk/mapbox/utils/heatmap'
 import { movkDrawModes } from '#mapbox/draw-modes'
 
 const state = useMapWorkspace()
 const drawnFeatures = useDrawnFeatures()
+const pendingDrawColor = usePendingDrawColor()
+const draw = useMapboxDraw({ mapId: MAP_ID })
 
-// 注册的模式集必须覆盖 map-tool-applicators 里 DRAW_MODE 的全部取值
-const DRAW_OPTIONS = { modes: { ...MapboxDraw.modes, ...movkDrawModes } }
+const DRAW_COLOR = '#3b82f6'
+
+// 注册的模式集必须覆盖 map-tool-applicators 里 DRAW_MODE 的全部取值；
+// styles 与 modes 一样是整体替换，drawThemeStyles 给的正是完整一套，
+// 其取色为 coalesce(user_color, 主题色)，故须开 userProperties 才能让要素级颜色生效
+const DRAW_OPTIONS = {
+  modes: { ...MapboxDraw.modes, ...movkDrawModes },
+  userProperties: true,
+  styles: drawThemeStyles({ color: DRAW_COLOR })
+}
+
+// draw-shape 挂起的颜色写进这次画出的要素，随后清空：用户自己点按钮画的下一个要素回到主题色
+function applyPendingColor(features: Feature[]) {
+  const color = pendingDrawColor.value
+  if (!color) return
+
+  for (const feature of features) {
+    if (feature.id === undefined) continue
+    draw.setFeatureProperty(String(feature.id), 'color', color)
+  }
+  pendingDrawColor.value = undefined
+}
 
 const MARKER_COLOR = '#f43f5e'
 const LAYER_COLOR = '#f43f5e'
@@ -195,7 +218,11 @@ const clusterData = computed<FeatureCollection>(() => ({
 
     <!-- DrawControl 在 setup 阶段即写入进程级绘制注册表，SSR 期执行会逐请求累积且无从注销 -->
     <ClientOnly>
-      <MapboxDrawControl v-model:features="drawnFeatures" :options="DRAW_OPTIONS" />
+      <MapboxDrawControl
+        v-model:features="drawnFeatures"
+        :options="DRAW_OPTIONS"
+        @create="applyPendingColor"
+      />
     </ClientOnly>
 
     <MapboxScaleControl />

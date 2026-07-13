@@ -36,7 +36,8 @@ export function useMapToolDispatch(
   const ctx: MapEffectContext = {
     camera: useMapboxCamera({ mapId: MAP_ID }),
     mapExport: useMapExport({ mapId: MAP_ID }),
-    draw: useMapboxDraw({ mapId: MAP_ID })
+    draw: useMapboxDraw({ mapId: MAP_ID }),
+    drawColor: usePendingDrawColor()
   }
 
   // 已触发过副作用的 toolCallId；null 表示当前会话尚未水合，下一次归约按「首屏批量落位」处理

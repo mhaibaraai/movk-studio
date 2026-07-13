@@ -3,7 +3,9 @@ import type { MapToolContract } from './types'
 
 const drawShape = {
   shape: z.enum(['point', 'line', 'polygon', 'rectangle', 'circle'])
-    .describe('要绘制的形状：point 点、line 线、polygon 任意多边形、rectangle 矩形、circle 圆')
+    .describe('要绘制的形状：point 点、line 线、polygon 任意多边形、rectangle 矩形、circle 圆'),
+  color: z.string().optional()
+    .describe('本次绘制的颜色（CSS 颜色值，如 #f43f5e）；缺省用默认主题色。只作用于用户接下来画出的这一个要素')
 }
 
 export const DRAW_TOOLS = {
