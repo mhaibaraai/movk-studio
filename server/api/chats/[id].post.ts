@@ -1,3 +1,4 @@
+import type { Feature } from 'geojson'
 import type { UIMessage } from 'ai'
 import { convertToModelMessages, createUIMessageStreamResponse, generateId, generateText, isStepCount, smoothStream, streamText, toUIMessageStream } from 'ai'
 import { db, schema } from 'hub:db'
@@ -19,11 +20,13 @@ export default defineEventHandler(async (event) => {
     id: z.string()
   }).parse)
 
-  const { model, messages } = await readValidatedBody(event, z.object({
+  const { model, messages, drawnFeatures } = await readValidatedBody(event, z.object({
     model: z.string().refine(value => MODELS.some(m => m.value === value), {
       message: 'Invalid model'
     }),
-    messages: z.array(z.custom<UIMessage>())
+    messages: z.array(z.custom<UIMessage>()),
+    // 客户端手绘要素快照；仅用于拼 system prompt，字段在 summarizeDrawnFeatures 内防御性读取
+    drawnFeatures: z.array(z.custom<Feature>()).max(50).optional()
   }).parse)
 
   // 会话须已由 POST /api/chats 建壳，此处仅流式：不存在 404，非本人 403（IDOR）
@@ -80,7 +83,7 @@ export default defineEventHandler(async (event) => {
     abortSignal: abortController.signal,
     model: resolveModel(model),
     maxOutputTokens: 8000,
-    instructions: copilotSystemPrompt(chat.workspace),
+    instructions: copilotSystemPrompt(chat.workspace, summarizeDrawnFeatures(drawnFeatures ?? [])),
     messages: await convertToModelMessages(messages),
     tools: getToolsForWorkspace(chat.workspace),
     providerOptions: PROVIDER_OPTIONS,

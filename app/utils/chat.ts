@@ -7,16 +7,17 @@ interface UIChat {
 
 const DAY_MS = 86_400_000
 
-// 按 createdAt 分到 今天 / 昨天 / 近 7 天 / 近 30 天 / 更早（按月份），空组不产出
-export function groupByDate(chats: Ref<UIChat[] | undefined>) {
+// 按 createdAt 分到 今天 / 昨天 / 近 7 天 / 近 30 天 / 更早（按月份），空组不产出。
+// 泛型透传调用方的会话形状（如 workspace 字段），分组不该抹掉它
+export function groupByDate<T extends UIChat>(chats: Ref<T[] | undefined>) {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
 
-  const today: UIChat[] = []
-  const yesterday: UIChat[] = []
-  const lastWeek: UIChat[] = []
-  const lastMonth: UIChat[] = []
-  const older: Record<string, UIChat[]> = {}
+  const today: T[] = []
+  const yesterday: T[] = []
+  const lastWeek: T[] = []
+  const lastMonth: T[] = []
+  const older: Record<string, T[]> = {}
 
   for (const chat of chats.value ?? []) {
     const time = new Date(chat.createdAt).getTime()

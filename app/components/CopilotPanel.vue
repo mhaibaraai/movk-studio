@@ -31,11 +31,20 @@ const ui = {
   }
 }
 
+const drawnFeatures = useDrawnFeatures()
+
+// transport 只构造一次，回调闭包读取 ref，每次发送带上当前手绘快照供服务端拼进 system prompt
 const transport = new DefaultChatTransport<UIMessage>({
   prepareSendMessagesRequest: ({ messages }) => ({
     api: `/api/chats/${chatId.value}`,
     headers: { [headerName]: csrf },
-    body: { messages, model: model.value }
+    body: {
+      messages,
+      model: model.value,
+      ...(workspace.value === 'map' && drawnFeatures.value.length
+        ? { drawnFeatures: drawnFeatures.value }
+        : {})
+    }
   })
 })
 
@@ -180,7 +189,7 @@ async function send(text: string) {
       toast.add({ description: '创建会话失败', icon: 'i-lucide-circle-alert', color: 'error' })
       return
     }
-    addChat(chatId.value)
+    addChat(chatId.value, workspace.value)
     persistToUrl()
   }
 

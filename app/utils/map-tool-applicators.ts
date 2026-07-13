@@ -3,10 +3,12 @@ import { omitUndefined } from '@movk/core'
 import type { MapToolName, MapToolOutput } from '#shared/utils/map-tools'
 import { getMapTool } from '#shared/utils/map-tools'
 
-// 派发上下文：相机与导出的组合式实例（在 setup 阶段构造后注入）
+// 派发上下文：相机、导出与绘制的组合式实例（在 setup 阶段构造后注入）
 export interface MapEffectContext {
   camera: ReturnType<typeof useMapboxCamera>
   mapExport: ReturnType<typeof useMapExport>
+  draw: ReturnType<typeof useMapboxDraw>
+  drawColor: ReturnType<typeof usePendingDrawColor>
 }
 
 /**
@@ -38,6 +40,16 @@ function define<N extends MapToolName>(name: N, spec: ApplicatorSpec<N>): MapToo
 
 // 自动落位的统一留白；限制最大缩放，避免单点结果的退化包围盒把相机贴地放大
 const FIT_OPTIONS = { padding: 60, maxZoom: 15 }
+
+// 契约的 shape → mapbox-gl-draw 模式名。取值必须全部落在 map.vue 注册的 DRAW_OPTIONS.modes 内，
+// rectangle / circle 来自 @movk/mapbox 的 movkDrawModes，非 mapbox-gl-draw 内置模式
+const DRAW_MODE: Record<MapToolOutput<'draw-shape'>['shape'], string> = {
+  point: 'draw_point',
+  line: 'draw_line_string',
+  polygon: 'draw_polygon',
+  rectangle: 'draw_rectangle',
+  circle: 'draw_circle'
+}
 
 function fitTo(ctx: MapEffectContext, target: GeoJSON, animate: boolean) {
   ctx.camera.fitBounds(target, animate ? FIT_OPTIONS : { ...FIT_OPTIONS, duration: 0 })
@@ -138,9 +150,59 @@ export const MAP_TOOL_APPLICATORS: Record<string, MapToolApplicator> = {
     }
   }),
 
+  // 以下四个只写 reduce：立体视角属于相机，交给 fly-to 的 pitch，不在这里抢镜头。
+  // 若给它们加相机 effect，刷新页面时会顶掉派发器重放的最后一个 fly-to，位置随之丢失。
+  'toggle-3d-buildings': define('toggle-3d-buildings', {
+    reduce: (draft, o) => {
+      draft.buildings3d = o.enabled ? { color: o.color, opacity: o.opacity, minZoom: o.minZoom } : undefined
+    }
+  }),
+
+  'set-terrain': define('set-terrain', {
+    reduce: (draft, o) => {
+      draft.terrain = o.enabled ? { exaggeration: o.exaggeration } : undefined
+    }
+  }),
+
+  'add-heatmap': define('add-heatmap', {
+    reduce: (draft, o) => {
+      draft.heatmap = {
+        id: o.heatmapId,
+        points: o.points,
+        weightRange: o.weightRange,
+        radius: o.radius,
+        opacity: o.opacity,
+        label: o.label
+      }
+    }
+  }),
+
+  'add-cluster': define('add-cluster', {
+    reduce: (draft, o) => {
+      draft.cluster = { id: o.clusterId, points: o.points, label: o.label }
+    }
+  }),
+
   'export-image': define('export-image', {
     effect: (ctx, o) => ctx.mapExport.download({ fileName: o.fileName }),
     replayOnLoad: false
+  }),
+
+  // 两个绘制工具都只写 effect 且不 replayOnLoad：刷新页面不该让地图重新进入绘制态，
+  // 也不该重放一次清除。手绘要素存在 useDrawnFeatures，不属于消息归约状态
+  'draw-shape': define('draw-shape', {
+    // 颜色只能等要素真正画出来才写得进去（user_color），此处先挂起，由 map.vue 的 draw.create 落地
+    effect: (ctx, o) => {
+      ctx.drawColor.value = o.color
+      ctx.draw.changeMode(DRAW_MODE[o.shape])
+    }
+  }),
+
+  'clear-drawing': define('clear-drawing', {
+    effect: (ctx) => {
+      ctx.drawColor.value = undefined
+      ctx.draw.deleteAll()
+    }
   }),
 
   'search-poi': define('search-poi', poiApplicator),

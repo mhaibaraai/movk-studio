@@ -1,5 +1,5 @@
 import type { Workspace } from '#shared/utils/workspace'
-import { WORKSPACES } from '#shared/utils/workspace'
+import { WORKSPACES, workspacePath } from '#shared/utils/workspace'
 
 export function useCopilot() {
   const route = useRoute()
@@ -29,8 +29,15 @@ export function useCopilot() {
     chatOpen.value = true
   }
 
-  function openChat(id: string) {
-    router.replace({ path: route.path, query: { chat: id } })
+  // 传入会话所属 workspace 时跳到对应工作区路由（home 列出的是全部工作区的会话）
+  function openChat(id: string, target?: Workspace) {
+    const path = target ? workspacePath(target) : route.path
+    const to = { path, query: { chat: id } }
+
+    // 同工作区内切会话不该堆历史栈；跨工作区是一次真实导航，push 让浏览器回退可用
+    if (path === route.path) router.replace(to)
+    else router.push(to)
+
     chatOpen.value = true
   }
 

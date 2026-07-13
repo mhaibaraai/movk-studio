@@ -1,9 +1,12 @@
 import { LazyModalRename } from '#components'
+import type { Workspace } from '#shared/utils/workspace'
+import { WORKSPACE_ICONS } from '#shared/utils/workspace'
 
 interface CachedChat {
   id: string
   label: string
   icon: string
+  workspace: Workspace
   createdAt: string | Date
 }
 
@@ -16,14 +19,21 @@ export function useChatActions() {
 
   const renameModal = overlay.create(LazyModalRename)
 
-  // 新建会话后立即乐观写入列表缓存，避免列表只依赖滞后的 refetch
-  function addChat(id: string): void {
+  // 新建会话后立即乐观写入列表缓存，避免列表只依赖滞后的 refetch。
+  // workspace 必须带上：列表项点击要靠它跳回所属工作区
+  function addChat(id: string, workspace: Workspace): void {
     const cache = useNuxtData<CachedChat[]>('chats')
     if (!cache.data.value) return
     if (cache.data.value.some(chat => chat.id === id)) return
 
     cache.data.value = [
-      { id, label: '未命名对话', icon: 'i-lucide-message-circle', createdAt: new Date().toISOString() },
+      {
+        id,
+        label: '未命名对话',
+        icon: WORKSPACE_ICONS[workspace],
+        workspace,
+        createdAt: new Date().toISOString()
+      },
       ...cache.data.value
     ]
   }

@@ -461,9 +461,17 @@ function newChat() {
   draftIds.value = { ...draftIds.value, [workspace.value]: crypto.randomUUID() } // 不可变更新
   router.replace({ path: route.path, query: {} })
 }
-function openChat(id: string) { router.replace({ path: route.path, query: { chat: id } }) }
+// 传入会话所属 workspace 时跳到对应工作区路由；同工作区内切会话仍走 replace
+function openChat(id: string, target?: Workspace) {
+  const path = target ? workspacePath(target) : route.path
+  const to = { path, query: { chat: id } }
+  if (path === route.path) router.replace(to)
+  else router.push(to)
+}
 function persistToUrl() { router.replace({ path: route.path, query: { chat: chatId.value } }) }
 ```
+
+**为什么 `openChat` 要认 workspace**：`GET /api/chats?workspace=global` 对 `global` **不过滤**，所以 home（`/`）的左栏列的是全部工作区的会话。若只改 query 不改 path，点开一条 map 会话会停在 `/?chat=<id>`——Copilot 面板加载了消息，主视图却还是 home，客户端 `workspace` 仍算 `global`（工具派发直接 return），而服务端按 DB 里的 `chat.workspace` 给的是 map 工具集，两侧不一致。会话所属工作区来自 `chats.workspace` 列，经 [default.vue](../../app/layouts/default.vue) 的列表项透传给 `openChat`；[useChatActions](../../app/composables/useChatActions.ts) 的乐观缓存项同样必须带上 `workspace`，否则新建会话在 refetch 落地前被点击会拿不到目标路由。左栏列表项的图标取 `WORKSPACE_ICONS[chat.workspace]`，home 一眼可辨会话归属。
 
 > 未建 `useWorkspace`：目前工作区页面还没有真实地图/表单状态可注入，`body` 只发 `{ model, workspace }`；待有实际模块状态时再引入 context 快照（见 9.7）。
 

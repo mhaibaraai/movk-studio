@@ -48,6 +48,33 @@ export interface MapAdminBoundary {
   boundary: MultiPolygon
 }
 
+export interface MapBuildings3D {
+  color?: string
+  opacity?: number
+  minZoom?: number
+}
+
+export interface MapTerrainState {
+  exaggeration: number
+}
+
+export interface MapHeatmap {
+  id: string
+  /** [经度, 纬度, 权重] */
+  points: [number, number, number][]
+  /** 权重取值范围，由 handler 按点集实际上界给出 */
+  weightRange: [number, number]
+  radius?: number
+  opacity?: number
+  label?: string | null
+}
+
+export interface MapClusterState {
+  id: string
+  points: [number, number][]
+  label?: string | null
+}
+
 export interface MapWorkspaceState {
   markers: MapMarker[]
   geojsonLayers: MapGeoJSONLayer[]
@@ -57,6 +84,11 @@ export interface MapWorkspaceState {
   // 单值几何、每次调用替换（语义同 pois 的替换不累加）
   adminBoundary?: MapAdminBoundary
   route?: LineString
+  // 渲染模式与可视化图层，同为单值替换；关闭 / 未调用时为 undefined
+  buildings3d?: MapBuildings3D
+  terrain?: MapTerrainState
+  heatmap?: MapHeatmap
+  cluster?: MapClusterState
 }
 
 // 全部状态的初始 / 复位值；派发器每次重算都基于它构造草稿
@@ -68,7 +100,11 @@ export function createMapWorkspaceState(): MapWorkspaceState {
     basemap: { layer: 'vec', annotation: true },
     pois: [],
     adminBoundary: undefined,
-    route: undefined
+    route: undefined,
+    buildings3d: undefined,
+    terrain: undefined,
+    heatmap: undefined,
+    cluster: undefined
   }
 }
 
