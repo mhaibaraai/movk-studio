@@ -224,7 +224,7 @@ Chat.vue 同时用一个本地 `useChat()` composable（跨组件共享的 `mess
 | 文件上传 | `useFileUploadWithStatus` + Blob | 无 | 组件已移植，逻辑注释 |
 | 鉴权 | GitHub OAuth + CSRF | 无 | `useUserSession`（FileUploadButton 已用） |
 | 消息编辑 | 编辑 / 重生成 / 投票 | 仅重生成 | 无 |
-| 空态 / 建议 | 首页 `quickChats` | `UPageLinks` suggestions | `quickChats`（未绑定动作） |
+| 空态 / 建议 | 首页 `quickChats` | `UPageLinks` suggestions | `QUICK_CHATS`（按工作区分组，点击即 `send`） |
 | 快捷键 | `meta_o` 新建 / `meta_k` 搜索 | `meta_i` 开关侧栏 | 无 |
 
 ## 6. movk-studio Copilot 落地对照与建议
@@ -234,7 +234,7 @@ Chat.vue 同时用一个本地 `useChat()` composable（跨组件共享的 `mess
 | 文件 | 状态 |
 | --- | --- |
 | [CopilotPanel.vue](../../app/components/CopilotPanel.vue) | 硬编码 messages 演示，`UChatPromptSubmit` 被注释，未接 `sendMessage` |
-| [index.vue](../../app/pages/index.vue) | `useChat({})` 空实例，`quickChats` 未绑定动作，上传按钮注释 |
+| [index.vue](../../app/pages/index.vue) | `useChat({})` 空实例，上传按钮注释；快捷提示后来移出为 [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts) |
 | [chat/message/MessageContent.vue](../../app/components/chat/message/MessageContent.vue) | 已移植，工具分发整段注释（Chart/Weather/Sources 依赖未引入） |
 | [chat/Comark.ts](../../app/components/chat/Comark.ts) | 已移植，Shiki 语言集已配置 |
 | [chat/SourceLink.vue](../../app/components/chat/SourceLink.vue) | 已移植 |
@@ -259,9 +259,9 @@ Chat.vue 同时用一个本地 `useChat()` composable（跨组件共享的 `mess
 - 行内提示参考来源二的 `getToolMessage` / `getToolIcon` 文案图标映射 + `useMemoize` 缓存。
 - 副作用执行参考来源二的 `processThemeToolCalls`（工具输出 → 真正调用地图 API，用 Set 去重 `toolCallId`）。
 
-**阶段四 · 快捷指令绑定**
+**阶段四 · 快捷指令绑定** ✅
 
-把 [index.vue](../../app/pages/index.vue) 的 `quickChats`（`飞到上海并标注外滩` 等）绑定到 `sendMessage`，参考来源一 `askQuestion` / `createChat`。
+已落地：快捷提示收敛到 [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts) 的 `QUICK_CHATS`（按 `Workspace` 分组），[CopilotPanel.vue](../../app/components/CopilotPanel.vue) 在空会话时渲染为 pill，点击即走 `send()`（草稿会话先落库再 `sendMessage`），由模型自行选择工具。
 
 **阶段五 · 按需引入**
 
@@ -397,7 +397,7 @@ app/
 2. **Copilot 提到 layout**：把 [CopilotPanel.vue](../../app/components/CopilotPanel.vue) 从页面移到 [layouts/default.vue](../../app/layouts/default.vue)，工作区内容用 `<slot/>` / `<NuxtPage>`，必要时 `keep-alive` 保留地图实例。
 3. **建 `useWorkspace`**：暴露当前工作区标识与上下文快照（如地图中心 / 缩放 / 图层），供 Copilot 的 `body` 动态注入。
 4. **建 `useCopilot`**：封装共享 `useChat`，`transport.body` 用函数形式读 `useWorkspace` 快照；按工作区键隔离会话状态（起步存内存）。
-5. **绑定快捷指令**：把 [index.vue](../../app/pages/index.vue) 的 `quickChats` 接到 `useCopilot().sendMessage`。
+5. **绑定快捷指令** ✅：快捷提示已抽到 [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts)，由 CopilotPanel 按工作区取用并接到 `send()`。
 6. **按需升级会话持久化**：确有跨会话回看需求时，再从「内存会话」升级到 query 参数（`?chat=`），全程不引入 `chat/[id]` 顶层路由。
 
 ## 9. Copilot chatId 逻辑设计（三工作区 · 新建 / 回显 / 历史）
