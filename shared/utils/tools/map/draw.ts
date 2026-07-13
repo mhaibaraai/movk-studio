@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { MapToolContract } from './types'
+import type { ToolContract } from '../types'
 
 const drawShape = {
   shape: z.enum(['point', 'line', 'polygon', 'rectangle', 'circle'])
@@ -27,4 +27,4 @@ export const DRAW_TOOLS = {
     status: ['正在清除手绘…', '已清除全部手绘'],
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
   }
-} satisfies Record<string, MapToolContract>
+} satisfies Record<string, ToolContract>

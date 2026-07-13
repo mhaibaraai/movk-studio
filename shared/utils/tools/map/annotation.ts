@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { MapToolContract } from './types'
+import type { ToolContract } from '../types'
 
 const longitude = z.number().min(-180).max(180)
 const latitude = z.number().min(-90).max(90)
@@ -99,4 +99,4 @@ export const ANNOTATION_TOOLS = {
     status: ['正在导出图片…', '已导出地图图片'],
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }
-} satisfies Record<string, MapToolContract>
+} satisfies Record<string, ToolContract>

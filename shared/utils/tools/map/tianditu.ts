@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { MapToolContract } from './types'
+import type { ToolContract } from '../types'
 
 const longitude = z.number().min(-180).max(180)
 const latitude = z.number().min(-90).max(90)
@@ -106,4 +106,4 @@ export const TIANDITU_TOOLS = {
     status: ['正在规划路线…', '已规划路线'],
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true }
   }
-} satisfies Record<string, MapToolContract>
+} satisfies Record<string, ToolContract>

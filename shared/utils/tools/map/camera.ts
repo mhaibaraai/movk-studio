@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { MapToolContract } from './types'
+import type { ToolContract } from '../types'
 
 const flyTo = {
   longitude: z.number().min(-180).max(180).describe('WGS84 经度'),
@@ -37,4 +37,4 @@ export const CAMERA_TOOLS = {
     status: ['正在缩放…', '已缩放到目标范围'],
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }
-} satisfies Record<string, MapToolContract>
+} satisfies Record<string, ToolContract>

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { MapToolContract } from './types'
+import type { ToolContract } from '../types'
 
 // 纯服务端计算，结果只供 LLM 口述，不驱动地图，故不声明 output schema
 export const COMPUTE_TOOLS = {
@@ -31,4 +31,4 @@ export const COMPUTE_TOOLS = {
     status: ['正在转换坐标…', '坐标转换完成'],
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }
-} satisfies Record<string, MapToolContract>
+} satisfies Record<string, ToolContract>

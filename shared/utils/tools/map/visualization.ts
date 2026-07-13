@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { MapToolContract } from './types'
+import type { ToolContract } from '../types'
 
 const longitude = z.number().min(-180).max(180)
 const latitude = z.number().min(-90).max(90)
@@ -79,4 +79,4 @@ export const VISUALIZATION_TOOLS = {
     status: ['正在绘制聚合图层…', '已绘制聚合图层'],
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   }
-} satisfies Record<string, MapToolContract>
+} satisfies Record<string, ToolContract>
