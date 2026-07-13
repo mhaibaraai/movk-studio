@@ -31,9 +31,9 @@ const ui = {
   }
 }
 
-const drawnFeatures = useDrawnFeatures()
+const workspaceContext = useWorkspaceContext(workspace)
 
-// transport 只构造一次，回调闭包读取 ref，每次发送带上当前手绘快照供服务端拼进 system prompt
+// transport 只构造一次，回调闭包读取 ref，每次发送带上当前工作区快照供服务端拼进 system prompt
 const transport = new DefaultChatTransport<UIMessage>({
   prepareSendMessagesRequest: ({ messages }) => ({
     api: `/api/chats/${chatId.value}`,
@@ -41,9 +41,7 @@ const transport = new DefaultChatTransport<UIMessage>({
     body: {
       messages,
       model: model.value,
-      ...(workspace.value === 'map' && drawnFeatures.value.length
-        ? { drawnFeatures: drawnFeatures.value }
-        : {})
+      ...(workspaceContext.value ? { workspaceContext: workspaceContext.value } : {})
     }
   })
 })
