@@ -10,6 +10,8 @@ export function useFormToolDispatch(
   chatId: Ref<string>
 ) {
   const state = useFormWorkspace()
+  // useNuxtApp 只能在 setup 同步栈里调，故在此取出 $prettier 后注入 ctx
+  const { $prettier } = useNuxtApp()
 
   useToolDispatch({
     messages,
@@ -19,6 +21,10 @@ export function useFormToolDispatch(
     state,
     createState: createFormSchema,
     applicators: FORM_TOOL_APPLICATORS,
-    ctx: { schema: state }
+    ctx: {
+      schema: state,
+      // 格式化失败不该让下载整个失败，退回未格式化的源码
+      format: (source: string) => $prettier.format(source).catch(() => source)
+    }
   })
 }

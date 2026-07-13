@@ -62,6 +62,8 @@ export default defineNuxtConfig({
         '@shikijs/langs/sql',
         '@shikijs/langs/swift',
         '@shikijs/langs/toml',
+        '@shikijs/langs/typescript',
+        '@shikijs/langs/vue',
         '@shikijs/langs/xml',
         'ai',
         '@turf/circle'

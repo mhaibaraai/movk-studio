@@ -2,9 +2,10 @@ import type { Ref } from 'vue'
 import type { FormField, FormSchema } from '#shared/utils/form-schema'
 import { createFormSchema } from '#shared/utils/form-schema'
 
-// 派发上下文：export-form-code 的 effect 需要读当前完整表单才能生成代码
+// 派发上下文：export-form-code 的 effect 要读当前完整表单来生成代码，并格式化后再下载
 export interface FormEffectContext {
   schema: Ref<FormSchema>
+  format: (source: string) => Promise<string>
 }
 
 type FormApplicator = ToolApplicator<FormSchema, FormEffectContext>
@@ -14,6 +15,15 @@ const define = createDefine<FormSchema, FormEffectContext>()
 /** 按 name 替换一个字段；整段状态由消息重放重建，故一律不可变更新 */
 function mapField(draft: FormSchema, name: string, update: (field: FormField) => FormField) {
   draft.fields = draft.fields.map(field => (field.name === name ? update(field) : field))
+}
+
+function downloadText(fileName: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 // 工具名 → 「对表单做什么」；派发器的 handled 集合由此表派生
@@ -118,5 +128,14 @@ export const FORM_TOOL_APPLICATORS: Record<string, FormApplicator> = {
 
   'set-field-condition': define('set-field-condition', {
     reduce: (draft, o) => mapField(draft, o.name, field => ({ ...field, condition: o.condition ?? undefined }))
+  }),
+
+  // 只写 effect 且不 replayOnLoad：刷新页面不该重复触发一次下载（同 map 的 export-image）
+  'export-form-code': define('export-form-code', {
+    effect: (ctx, o) => {
+      void ctx.format(generateFormCode(ctx.schema.value))
+        .then(code => downloadText(`${o.fileName}.vue`, code))
+    },
+    replayOnLoad: false
   })
 }

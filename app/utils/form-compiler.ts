@@ -5,28 +5,38 @@ import type { FieldCondition, FieldType, FieldValidation, FormField, FormSchema 
 
 type Afz = ReturnType<typeof useAutoForm>['afz']
 
-/** 字段类型 → 控件 key（DEFAULT_CONTROLS 的键）；undefined 表示用该 zod 类型的默认控件 */
-const FIELD_CONTROL: Record<FieldType, string | undefined> = {
-  text: undefined,
-  textarea: 'textarea',
-  password: 'withPasswordToggle',
-  email: undefined,
-  url: undefined,
-  phone: 'asPhoneNumberInput',
-  number: undefined,
-  slider: 'slider',
-  rating: 'starRating',
-  switch: 'switch',
-  checkbox: undefined,
-  select: 'selectMenu',
-  radio: 'radioGroup',
-  pills: 'pillGroup',
-  tags: 'inputTags',
-  date: undefined,
-  time: undefined,
-  file: undefined,
-  color: 'colorChooser',
-  pin: 'pinInput'
+export interface FieldTypeSpec {
+  /** afz 的工厂方法名 */
+  factory: string
+  /** 控件 key（DEFAULT_CONTROLS 的键）；省略表示用该 zod 类型的默认控件 */
+  control?: string
+}
+
+/**
+ * 字段类型 → afz 工厂方法 + 控件。编译器与 form-codegen 共用这一张表：
+ * 两处各存一份的话，导出的代码会与画布上的预览悄悄不一致。
+ */
+export const FIELD_SPEC: Record<FieldType, FieldTypeSpec> = {
+  text: { factory: 'string' },
+  textarea: { factory: 'string', control: 'textarea' },
+  password: { factory: 'string', control: 'withPasswordToggle' },
+  email: { factory: 'email' },
+  url: { factory: 'url' },
+  phone: { factory: 'string', control: 'asPhoneNumberInput' },
+  number: { factory: 'number' },
+  slider: { factory: 'number', control: 'slider' },
+  rating: { factory: 'number', control: 'starRating' },
+  switch: { factory: 'boolean', control: 'switch' },
+  checkbox: { factory: 'boolean' },
+  select: { factory: 'enum', control: 'selectMenu' },
+  radio: { factory: 'enum', control: 'radioGroup' },
+  pills: { factory: 'enum', control: 'pillGroup' },
+  tags: { factory: 'array', control: 'inputTags' },
+  date: { factory: 'calendarDate' },
+  time: { factory: 'inputTime' },
+  file: { factory: 'file' },
+  color: { factory: 'string', control: 'colorChooser' },
+  pin: { factory: 'string', control: 'pinInput' }
 }
 
 // 只有文本 / 数值 / 选择类控件认 placeholder；开关、评分、取色器传了只会漏成 DOM 属性
@@ -39,8 +49,18 @@ const EVENT_PROP = /^on[A-Z]/
 /** AI 生成的正则源串长度上限，缓解 ReDoS 卡死浏览器主线程 */
 const MAX_PATTERN_LENGTH = 200
 
+/** 校验提示文案；编译器与 form-codegen 共用，保证导出的代码与画布预览逐字一致 */
+export const RULE_MESSAGE = {
+  minLength: (n: number) => `最少 ${n} 个字符`,
+  maxLength: (n: number) => `最多 ${n} 个字符`,
+  minValue: (n: number) => `不能小于 ${n}`,
+  maxValue: (n: number) => `不能大于 ${n}`,
+  integer: '必须是整数',
+  pattern: '格式不正确'
+}
+
 /** 正则来自 AI，非法或过长时跳过这一条校验，而不是让整个表单编译失败 */
-function compileRegExp(pattern?: string): RegExp | undefined {
+export function compileRegExp(pattern?: string): RegExp | undefined {
   if (!pattern || pattern.length > MAX_PATTERN_LENGTH) return undefined
 
   try {
@@ -81,7 +101,8 @@ function safeControlProps(props: Record<string, unknown> | undefined): Record<st
   return Object.fromEntries(Object.entries(props).filter(([key]) => !EVENT_PROP.test(key)))
 }
 
-function controlPropsFor(field: FormField): Record<string, unknown> {
+/** 字段最终生效的 controlProps；codegen 复用它，保证导出代码与预览一致 */
+export function fieldControlProps(field: FormField): Record<string, unknown> {
   const derived: Record<string, unknown> = {}
 
   if (field.placeholder && PLACEHOLDER_TYPES.has(field.type)) {
@@ -103,7 +124,7 @@ function controlPropsFor(field: FormField): Record<string, unknown> {
  * 运行时 JSON，类型层无从对上号。整个编译器只在这一处收口成 never，其余保持类型安全。
  */
 function fieldMeta(field: FormField): never {
-  const control = FIELD_CONTROL[field.type]
+  const { control } = FIELD_SPEC[field.type]
   const condition = field.condition
 
   return {
@@ -114,26 +135,26 @@ function fieldMeta(field: FormField): never {
     ...(condition
       ? { if: (ctx: { state: Record<string, unknown> }) => evalCondition(condition, ctx.state) }
       : {}),
-    controlProps: controlPropsFor(field)
+    controlProps: fieldControlProps(field)
   } as never
 }
 
 function stringRules(schema: z.ZodString, rules: FieldValidation | undefined): z.ZodString {
   let out = schema
-  if (rules?.min !== undefined) out = out.min(rules.min, `最少 ${rules.min} 个字符`)
-  if (rules?.max !== undefined) out = out.max(rules.max, `最多 ${rules.max} 个字符`)
+  if (rules?.min !== undefined) out = out.min(rules.min, RULE_MESSAGE.minLength(rules.min))
+  if (rules?.max !== undefined) out = out.max(rules.max, RULE_MESSAGE.maxLength(rules.max))
 
   const pattern = compileRegExp(rules?.pattern)
-  if (pattern) out = out.regex(pattern, rules?.patternMessage ?? '格式不正确')
+  if (pattern) out = out.regex(pattern, rules?.patternMessage ?? RULE_MESSAGE.pattern)
 
   return out
 }
 
 function numberRules(schema: z.ZodNumber, rules: FieldValidation | undefined): z.ZodNumber {
   let out = schema
-  if (rules?.integer) out = out.int('必须是整数')
-  if (rules?.min !== undefined) out = out.min(rules.min, `不能小于 ${rules.min}`)
-  if (rules?.max !== undefined) out = out.max(rules.max, `不能大于 ${rules.max}`)
+  if (rules?.integer) out = out.int(RULE_MESSAGE.integer)
+  if (rules?.min !== undefined) out = out.min(rules.min, RULE_MESSAGE.minValue(rules.min))
+  if (rules?.max !== undefined) out = out.max(rules.max, RULE_MESSAGE.maxValue(rules.max))
 
   return out
 }
