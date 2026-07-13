@@ -1,6 +1,7 @@
 import type { ZodType, z } from 'zod'
 import type { ToolContract } from './types'
 import { MAP_TOOLS } from './map'
+import { FORM_TOOLS } from './form'
 
 export type { ToolContract, ToolAnnotations } from './types'
 
@@ -12,7 +13,8 @@ export type { ToolContract, ToolAnnotations } from './types'
  * →（若要驱动画布）在该工作区的 applicators 表里加一条。
  */
 export const TOOLS = {
-  ...MAP_TOOLS
+  ...MAP_TOOLS,
+  ...FORM_TOOLS
 }
 
 export type ToolName = keyof typeof TOOLS
