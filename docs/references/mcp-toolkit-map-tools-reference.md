@@ -262,7 +262,7 @@ export default defineMcpTool({
 - [app/pages/workspace/map.vue](../../app/pages/workspace/map.vue) —— `map-id` + 声明式渲染 + `<MapboxDrawControl>`（`drawThemeStyles` + `@create` 落色）
 - [app/components/CopilotPanel.vue](../../app/components/CopilotPanel.vue) —— 调用 `useMapToolDispatch` 的作用域
 - [app/components/chat/message/MessageContent.vue](../../app/components/chat/message/MessageContent.vue) —— 工具状态文案（读契约的 `status`）
-- [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts) —— Copilot 侧栏快捷提示，逐条覆盖各工具与关键参数路径
+- [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts) —— Copilot 侧栏快捷提示，写成带动机的真实场景（常触发多工具串联），整体仍覆盖全部工具与关键参数路径
 
 `@movk/mapbox` 包（源码在 `/Users/yixuanmiao/Projects/movk-mapbox`）：
 
