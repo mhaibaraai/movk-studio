@@ -23,7 +23,7 @@
     "@iconify-json/simple-icons": "^1.2.89",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@movk/core": "^1.3.1",
-    "@movk/mapbox": "https://pkg.pr.new/@movk/mapbox@c9afa7b",
+    "@movk/mapbox": "^1.2.0",
     "@movk/nuxt": "^1.4.2",
     "@nuxt/kit": "^4.4.8",
     "@nuxt/ui": "^4.9.0",
