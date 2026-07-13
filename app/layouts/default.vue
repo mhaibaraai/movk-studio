@@ -47,7 +47,8 @@ const { data: chats } = useFetch('/api/chats', {
   transform: (data: ChatRow[]) => data.map(chat => ({
     id: chat.id,
     label: chat.title || '未命名对话',
-    icon: 'i-lucide-message-circle',
+    icon: WORKSPACE_ICONS[chat.workspace],
+    workspace: chat.workspace,
     createdAt: chat.createdAt
   }))
 })
@@ -57,7 +58,7 @@ const groups = computed(() => groupByDate(chats).map(group => ({
   items: group.items.map(item => ({
     ...item,
     active: item.id === chatId.value,
-    onSelect: () => openChat(item.id)
+    onSelect: () => openChat(item.id, item.workspace)
   }))
 })))
 
@@ -78,17 +79,16 @@ const workspaceNavs: NavigationMenuItem[] = [
   { label: '数据', icon: 'i-lucide-package', to: '/workspace/data' }
 ]
 
-const historyChats = computed(() => groups.value?.flatMap((group) => {
-  return [{
-    label: group.label,
-    type: 'label' as const
-  }, ...group.items.map(item => ({
+// 日期分组为可折叠父项；vertical 下 children 递归走同一套 item 模板，故子项仍支持 slot / icon / onSelect
+const historyChats = computed<NavigationMenuItem[]>(() => groups.value.map(group => ({
+  label: group.label,
+  defaultOpen: true,
+  children: group.items.map(item => ({
     ...item,
     slot: 'chat' as const,
-    icon: undefined,
     class: item.label === '未命名对话' ? 'text-muted' : ''
-  }))]
-}))
+  }))
+})))
 
 function getChatActions(item: { id: string, label: string }): DropdownMenuItem[][] {
   return [[

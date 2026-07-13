@@ -189,7 +189,7 @@ async function send(text: string) {
       toast.add({ description: '创建会话失败', icon: 'i-lucide-circle-alert', color: 'error' })
       return
     }
-    addChat(chatId.value)
+    addChat(chatId.value, workspace.value)
     persistToUrl()
   }
 
