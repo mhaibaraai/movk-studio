@@ -11,3 +11,4 @@ overrides:
 
 minimumReleaseAgeExclude:
   - '@movk/mapbox@1.2.0'
+  - '@nuxtjs/mcp-toolkit@0.18.0'
