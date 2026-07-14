@@ -1,42 +1,16 @@
-import type { FieldCondition, FieldValidation, FormField, FormGroup, FormSchema } from '#shared/utils/form-schema'
+import type { FieldCondition, FormField, FormGroup, FormSchema } from '#shared/utils/form-schema'
+import { CONDITION_OPS, activeRules, walkForm } from '#shared/utils/form-semantics'
 
 /** 单个已填值的字符串上限，避免长文本备注挤占 prompt */
 const MAX_VALUE_LENGTH = 60
 
-const OP_LABEL: Record<FieldCondition['op'], string> = {
-  eq: '等于',
-  ne: '不等于',
-  in: '属于',
-  notIn: '不属于',
-  gt: '大于',
-  lt: '小于',
-  truthy: '有值',
-  falsy: '无值'
-}
-
-function describeValidation(validation: FieldValidation | undefined, type: FormField['type']): string[] {
-  if (!validation) return []
-
-  const parts: string[] = []
-  const unit = type === 'number' || type === 'slider' || type === 'rating' ? '' : '字符'
-
-  if (validation.min !== undefined) parts.push(`最小 ${validation.min}${unit}`)
-  if (validation.max !== undefined) parts.push(`最大 ${validation.max}${unit}`)
-  if (validation.integer) parts.push('必须为整数')
-  if (validation.pattern) parts.push(`正则 ${validation.pattern}`)
-
-  return parts.length ? [`校验：${parts.join('、')}`] : []
-}
-
 function describeCondition(condition: FieldCondition | undefined): string[] {
   if (!condition) return []
 
-  const target = OP_LABEL[condition.op]
-  const value = condition.op === 'truthy' || condition.op === 'falsy'
-    ? ''
-    : ` ${JSON.stringify(condition.value)}`
+  const { label, needsValue } = CONDITION_OPS[condition.op]
+  const value = needsValue ? ` ${JSON.stringify(condition.value)}` : ''
 
-  return [`显示条件：${condition.field} ${target}${value}`]
+  return [`显示条件：${condition.field} ${label}${value}`]
 }
 
 function describeField(field: FormField, index: number): string {
@@ -53,7 +27,9 @@ function describeField(field: FormField, index: number): string {
   }
   if (field.defaultValue !== undefined) segments.push(`默认值 ${JSON.stringify(field.defaultValue)}`)
 
-  segments.push(...describeValidation(field.validation, field.type))
+  const rules = activeRules(field.type, field.validation)
+  if (rules.length) segments.push(`校验：${rules.map(rule => rule.label).join('、')}`)
+
   segments.push(...describeCondition(field.condition))
 
   return segments.join('  ')
@@ -82,28 +58,26 @@ function describeValues(values: Record<string, unknown>): string | null {
  * 把当前表单结构与已填值摘要成一段可注入 system prompt 的文本；空表单返回 null。
  *
  * 必须带 name 列——AI 靠它定位字段做增量修改。不注入的话它只能把归约算法在脑子里
- * 重跑一遍（generate-form 之后接一串 update-field），既贵又不可靠。
+ * 重跑一遍（generate-form 之后接一串 upsert-field），既贵又不可靠。
  */
 export function summarizeForm(schema: FormSchema, values: Record<string, unknown>): string | null {
   if (!schema.fields.length) return null
 
-  const header = [`当前表单「${schema.title || '未命名表单'}」`]
-  if (schema.description) header.push(`说明：${schema.description}`)
-  if (schema.submitText) header.push(`提交按钮：${schema.submitText}`)
+  const lines: string[] = []
 
-  const lines = [header.join('，')]
-
-  if (schema.groups.length) {
-    lines.push(`分组：${schema.groups.map(describeGroup).join('；')}`)
+  // 分组的展示顺序与画布一致
+  const groups = walkForm(schema).flatMap(node => (node.kind === 'group' ? [node.group] : []))
+  if (groups.length) {
+    lines.push(`分组：${groups.map(describeGroup).join('；')}`)
   }
 
-  lines.push('字段（按展示顺序）：')
+  lines.push('当前表单的字段（按展示顺序）：')
   lines.push(...schema.fields.map(describeField))
 
   const filled = describeValues(values)
   if (filled) lines.push(filled)
 
-  lines.push('修改表单时用上面第二列的 name 定位字段，调用 update-field / set-field-validation / set-field-options / set-field-condition 等增量工具。不要为了改动局部而重新调用 generate-form——那会丢掉现有内容。')
+  lines.push('修改表单时用上面第二列的 name 定位字段，调用 upsert-field 等增量工具。不要为了改动局部而重新调用 generate-form——那会丢掉现有内容。')
 
   return lines.join('\n')
 }

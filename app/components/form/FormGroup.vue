@@ -1,12 +1,7 @@
 <script setup lang="ts">
-// afz.layout 的容器组件：字段进默认插槽，栅格列数由 columns 决定。
-// 类名必须是完整字面量，Tailwind 不扫描拼接出来的类名
-const COLUMN_CLASS: Record<1 | 2 | 3, string> = {
-  1: 'grid grid-cols-1 gap-4',
-  2: 'grid grid-cols-1 sm:grid-cols-2 gap-4',
-  3: 'grid grid-cols-1 sm:grid-cols-3 gap-4'
-}
+import { COLUMN_CLASS } from '#shared/utils/form-semantics'
 
+// afz.layout 的容器组件：字段进默认插槽，栅格列数由 columns 决定
 const { title, columns = 1, collapsible = false } = defineProps<{
   title?: string
   /**
@@ -22,6 +17,7 @@ const { title, columns = 1, collapsible = false } = defineProps<{
 }>()
 
 const open = ref(true)
+const gridClass = computed(() => COLUMN_CLASS[columns])
 
 function toggle() {
   open.value = !open.value
@@ -46,7 +42,7 @@ function toggle() {
       />
     </div>
 
-    <div v-show="!collapsible || open" :class="COLUMN_CLASS[columns]">
+    <div v-show="!collapsible || open" :class="gridClass">
       <slot />
     </div>
   </div>

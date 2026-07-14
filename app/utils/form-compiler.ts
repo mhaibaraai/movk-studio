@@ -1,123 +1,10 @@
 import type { z } from 'zod'
 import { z as zod } from 'zod'
 import { FormGroup as FormGroupComponent } from '#components'
-import type { FieldCondition, FieldType, FieldValidation, FormField, FormSchema } from '#shared/utils/form-schema'
+import type { FormField, FormSchema } from '#shared/utils/form-schema'
+import { FIELD_SPEC, activeRules, evalCondition, fieldControlProps, walkForm } from '#shared/utils/form-semantics'
 
 type Afz = ReturnType<typeof useAutoForm>['afz']
-
-export interface FieldTypeSpec {
-  /** afz 的工厂方法名 */
-  factory: string
-  /** 控件 key（DEFAULT_CONTROLS 的键）；省略表示用该 zod 类型的默认控件 */
-  control?: string
-}
-
-/**
- * 字段类型 → afz 工厂方法 + 控件。编译器与 form-codegen 共用这一张表：
- * 两处各存一份的话，导出的代码会与画布上的预览悄悄不一致。
- */
-export const FIELD_SPEC: Record<FieldType, FieldTypeSpec> = {
-  text: { factory: 'string' },
-  textarea: { factory: 'string', control: 'textarea' },
-  password: { factory: 'string', control: 'withPasswordToggle' },
-  email: { factory: 'email' },
-  url: { factory: 'url' },
-  phone: { factory: 'string', control: 'asPhoneNumberInput' },
-  number: { factory: 'number' },
-  slider: { factory: 'number', control: 'slider' },
-  rating: { factory: 'number', control: 'starRating' },
-  switch: { factory: 'boolean', control: 'switch' },
-  checkbox: { factory: 'boolean' },
-  select: { factory: 'enum', control: 'selectMenu' },
-  radio: { factory: 'enum', control: 'radioGroup' },
-  pills: { factory: 'enum', control: 'pillGroup' },
-  tags: { factory: 'array', control: 'inputTags' },
-  date: { factory: 'calendarDate' },
-  time: { factory: 'inputTime' },
-  file: { factory: 'file' },
-  color: { factory: 'string', control: 'colorChooser' },
-  pin: { factory: 'string', control: 'pinInput' }
-}
-
-// 只有文本 / 数值 / 选择类控件认 placeholder；开关、评分、取色器传了只会漏成 DOM 属性
-const PLACEHOLDER_TYPES = new Set<FieldType>([
-  'text', 'textarea', 'password', 'email', 'url', 'phone', 'number', 'select', 'tags'
-])
-
-const EVENT_PROP = /^on[A-Z]/
-
-/** AI 生成的正则源串长度上限，缓解 ReDoS 卡死浏览器主线程 */
-const MAX_PATTERN_LENGTH = 200
-
-/** 校验提示文案；编译器与 form-codegen 共用，保证导出的代码与画布预览逐字一致 */
-export const RULE_MESSAGE = {
-  minLength: (n: number) => `最少 ${n} 个字符`,
-  maxLength: (n: number) => `最多 ${n} 个字符`,
-  minValue: (n: number) => `不能小于 ${n}`,
-  maxValue: (n: number) => `不能大于 ${n}`,
-  integer: '必须是整数',
-  pattern: '格式不正确'
-}
-
-/** 正则来自 AI，非法或过长时跳过这一条校验，而不是让整个表单编译失败 */
-export function compileRegExp(pattern?: string): RegExp | undefined {
-  if (!pattern || pattern.length > MAX_PATTERN_LENGTH) return undefined
-
-  try {
-    return new RegExp(pattern)
-  } catch {
-    return undefined
-  }
-}
-
-/** 声明式条件求值；绝不 eval AI 产出的字符串 */
-export function evalCondition(condition: FieldCondition, state: Record<string, unknown>): boolean {
-  const actual = state[condition.field]
-  const { op, value } = condition
-
-  switch (op) {
-    case 'truthy':
-      return Boolean(actual)
-    case 'falsy':
-      return !actual
-    case 'eq':
-      return actual === value
-    case 'ne':
-      return actual !== value
-    case 'in':
-      return Array.isArray(value) && value.some(item => item === actual)
-    case 'notIn':
-      return Array.isArray(value) && !value.some(item => item === actual)
-    case 'gt':
-      return typeof actual === 'number' && typeof value === 'number' && actual > value
-    case 'lt':
-      return typeof actual === 'number' && typeof value === 'number' && actual < value
-  }
-}
-
-/** controlProps 直通 AI 输入，剔除事件处理器键（包侧同样用 /^on[A-Z]/ 检测） */
-function safeControlProps(props: Record<string, unknown> | undefined): Record<string, unknown> {
-  if (!props) return {}
-  return Object.fromEntries(Object.entries(props).filter(([key]) => !EVENT_PROP.test(key)))
-}
-
-/** 字段最终生效的 controlProps；codegen 复用它，保证导出代码与预览一致 */
-export function fieldControlProps(field: FormField): Record<string, unknown> {
-  const derived: Record<string, unknown> = {}
-
-  if (field.placeholder && PLACEHOLDER_TYPES.has(field.type)) {
-    derived.placeholder = field.placeholder
-  }
-  if (field.options?.length) {
-    derived.items = field.options
-  }
-  // 日期值默认是 CalendarDate 实例，无法进 JSON（落 prompt、落 codegen 都会失真）；统一取 ISO 字符串
-  if (field.type === 'date') {
-    derived.valueFormat = 'iso'
-  }
-
-  return { ...derived, ...safeControlProps(field.controlProps) }
-}
 
 /**
  * afz 的重载按控件 key 静态收窄 controlProps 的类型，而这里的控件 key 与 props 全部来自
@@ -139,29 +26,8 @@ function fieldMeta(field: FormField): never {
   } as never
 }
 
-function stringRules(schema: z.ZodString, rules: FieldValidation | undefined): z.ZodString {
-  let out = schema
-  if (rules?.min !== undefined) out = out.min(rules.min, RULE_MESSAGE.minLength(rules.min))
-  if (rules?.max !== undefined) out = out.max(rules.max, RULE_MESSAGE.maxLength(rules.max))
-
-  const pattern = compileRegExp(rules?.pattern)
-  if (pattern) out = out.regex(pattern, rules?.patternMessage ?? RULE_MESSAGE.pattern)
-
-  return out
-}
-
-function numberRules(schema: z.ZodNumber, rules: FieldValidation | undefined): z.ZodNumber {
-  let out = schema
-  if (rules?.integer) out = out.int(RULE_MESSAGE.integer)
-  if (rules?.min !== undefined) out = out.min(rules.min, RULE_MESSAGE.minValue(rules.min))
-  if (rules?.max !== undefined) out = out.max(rules.max, RULE_MESSAGE.maxValue(rules.max))
-
-  return out
-}
-
 function baseSchema(field: FormField, afz: Afz): z.ZodType {
   const meta = fieldMeta(field)
-  const rules = field.validation
 
   switch (field.type) {
     case 'text':
@@ -170,22 +36,22 @@ function baseSchema(field: FormField, afz: Afz): z.ZodType {
     case 'phone':
     case 'color':
     case 'pin':
-      return stringRules(afz.string(meta), rules)
+      return afz.string(meta)
     case 'email':
-      return stringRules(afz.email(meta), rules)
+      return afz.email(meta)
     case 'url':
-      return stringRules(afz.url(meta), rules)
+      return afz.url(meta)
     case 'number':
     case 'slider':
     case 'rating':
-      return numberRules(afz.number(meta), rules)
+      return afz.number(meta)
     case 'switch':
     case 'checkbox':
       return afz.boolean(meta)
     case 'select':
     case 'radio':
     case 'pills':
-      // 选项为空时 afz.enum 退化成 z.string()，控件仍渲染但无可选项——不崩，等 AI 补 set-field-options
+      // 选项为空时 afz.enum 退化成 z.string()，控件仍渲染但无可选项——不崩，等 AI 补上选项
       return afz.enum((field.options ?? []).map(option => option.value), meta)
     case 'tags':
       return afz.array(zod.string(), meta)
@@ -199,7 +65,8 @@ function baseSchema(field: FormField, afz: Afz): z.ZodType {
 }
 
 function compileField(field: FormField, afz: Afz): z.ZodType {
-  let schema = baseSchema(field, afz)
+  let schema = activeRules(field.type, field.validation)
+    .reduce((acc, rule) => rule.apply(acc), baseSchema(field, afz))
 
   if (field.defaultValue !== undefined) schema = schema.default(field.defaultValue as never)
   // AutoForm 的必填星号从 zod 的可选性反推（required: !decorators.isOptional），无需另写 meta
@@ -213,30 +80,20 @@ function compileField(field: FormField, afz: Afz): z.ZodType {
  *
  * 分组用 afz.layout 包一层：它产出的 LayoutFieldMarker 只影响渲染，
  * 类型与运行时都会被展平回顶层 shape，故表单数据始终是扁平的 { name, phone, ... }。
- *
- * 顺序按 fields 的扁平顺序走：首次遇到某分组的字段时就地展开整个分组，
- * 分组内字段仍按扁平顺序排列——分组字段交错时行为可预期。
  */
 export function compileFormSchema(schema: FormSchema, afz: Afz): z.ZodObject {
   const shape: Record<string, z.ZodType> = {}
-  const groups = new Map(schema.groups.map(group => [group.id, group]))
-  const expanded = new Set<string>()
 
-  for (const field of schema.fields) {
-    const group = field.group ? groups.get(field.group) : undefined
-
-    // 无分组，或指向了不存在的分组：直接落在顶层
-    if (!group) {
-      shape[field.name] = compileField(field, afz)
+  for (const node of walkForm(schema)) {
+    if (node.kind === 'field') {
+      shape[node.field.name] = compileField(node.field, afz)
       continue
     }
 
-    if (expanded.has(group.id)) continue
-    expanded.add(group.id)
-
+    const { group, fields } = node
     const groupFields: Record<string, z.ZodType> = {}
-    for (const member of schema.fields) {
-      if (member.group === group.id) groupFields[member.name] = compileField(member, afz)
+    for (const member of fields) {
+      groupFields[member.name] = compileField(member, afz)
     }
 
     shape[`__group_${group.id}`] = afz.layout({
