@@ -29,7 +29,7 @@
 ### `@nuxtjs/mcp-toolkit` 关键 API（已核对已发布的 0.17.2 版本源码）
 
 - `defineMcpTool({ name?, title?, description?, inputSchema?, outputSchema?, annotations?, handler, cache? })`：`inputSchema` 是**原始 Zod shape**（不是 `z.object(...)`，模块自己包一层）；`name`/`title` 缺省时从文件名自动生成（kebab-case）。
-- 工具文件放在 `server/mcp/{dir}/tools/*.ts`（`dir` 默认 `mcp`，即 `server/mcp/tools/`），自动发现、自动注册到 `/mcp` 端点。
+- 工具文件放在 `server/mcp/{dir}/tools/*.ts`（`dir` 默认 `mcp`，即 `server/mcp/tools/`），自动发现、自动注册到 `/mcp` 端点。目录是**递归**扫描的，**子目录名会作为 `group` 注入 `_meta.group`**——本项目正是靠它把工具归到工作区（`map/` 22 个、`form/` 7 个），见 4.1。
 - 服务端消费全部工具定义的虚拟导入是 **`#nuxt-mcp-toolkit/tools.mjs`**（导出 `tools` 数组）。
 
   > ⚠️ 踩坑记录：`mcp-toolkit` 源码仓库（未发布的开发分支）里这个路径已经改名为 `#nuxt-mcp/tools.mjs`，但 npm 上已发布、且 nuxt/ui docs 站实际安装跑通的 0.17.2 版本，编译产物（`dist/module.mjs`）里用的仍然是 `#nuxt-mcp-toolkit/tools.mjs` 前缀。以 `npm view @nuxtjs/mcp-toolkit version` 确认的已发布版本为准，不要以源码仓库当前状态为准。
@@ -104,22 +104,28 @@ import { createTianditu } from '@movk/mapbox/utils/tianditu-client'
 
 | 问题 | 位置 |
 | --- | --- |
-| 它长什么样（描述、输入、输出、工作区、状态文案、annotations） | [shared/utils/tools/map/](../../shared/utils/tools/map/) 契约 |
-| 它在服务端算什么 | [server/mcp/tools/](../../server/mcp/tools/) 的 handler |
+| 它长什么样（描述、输入、输出、图标、状态文案、annotations） | [shared/utils/tools/map/](../../shared/utils/tools/map/) 契约 |
+| 它在服务端算什么 | [server/mcp/tools/map/](../../server/mcp/tools/map/) 的 handler |
 | 它对地图做什么 | [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts) |
+| 它属于哪个工作区 | `server/mcp/tools/<workspace>/` 的目录归属（不在契约里） |
 
 契约按域分文件（`camera.ts` / `annotation.ts` / `visualization.ts` / `compute.ts` / `tianditu.ts` / `draw.ts`），`map/index.ts` 汇总为 `MAP_TOOLS`，再由 [shared/utils/tools/index.ts](../../shared/utils/tools/index.ts) 与 `FORM_TOOLS` 合并成 `TOOLS`：
 
 ```ts
 export interface ToolContract {
-  workspaces: Workspace[]
   description: string
   input: ZodRawShape          // 直接作为 defineMcpTool 的 inputSchema
-  output?: ZodType            // 仅需驱动画布的工具声明；纯信息类工具省略
+  output?: ZodType            // 可选覆盖：省略即按 z.object(input) 校验回显
+  icon?: string               // 聊天流气泡的 Iconify 图标名
   status: [string, string]    // 聊天流的进行时 / 完成态文案
-  annotations?: ToolAnnotations
+  annotations?: McpToolAnnotations
 }
 ```
+
+> 契约里**没有 `workspaces` 字段**，`output` 也**不是必填**——两者都是落地 form 工作区时收敛掉的，理由见 [autoform-form-workspace-reference.md](./autoform-form-workspace-reference.md) 的 5.3：
+>
+> - **工作区由目录回答**。`workspaces` 曾存在于 34 个契约里且无一是多值的；现在 `ls server/mcp/tools/map/` 就是 map 的权威工具清单。
+> - **`output` 是可选覆盖**。handler 原样退回入参的工具（map 侧的 `fly-to` / `fit-bounds` / `set-basemap` / `remove-marker` 等）省略即可，`getToolOutputSchema()` 回落到 `z.object(input)` 校验回显（带缓存：流式期每 token 都会对全部历史工具调用跑一次）。
 
 > **落地 form 工作区时做过一次去 map 化泛化**：契约层从 `shared/utils/map-tools/` 迁到 `shared/utils/tools/`，`MapToolContract` / `MAP_TOOLS` / `getMapTool` 更名为 `ToolContract` / `TOOLS` / `getTool`——这七个字段无一处与地图耦合，是无损重命名。派发器同时泛型化为 `useToolDispatch<TState, TCtx>`，`useMapToolDispatch` 退化为注入地图状态与命令式实例的薄封装。**22 个 handler 零改动**（`mcpToolFrom` 与 `defineMcpTool` 都是自动导入，handler 文件根本不 import 契约层）。详见 [autoform-form-workspace-reference.md](./autoform-form-workspace-reference.md) 的 2.4 与 5.1。
 
@@ -130,7 +136,7 @@ export interface ToolContract {
 服务端工具文件因此只剩它独有的东西：
 
 ```ts
-// server/mcp/tools/fly-to.ts —— 全文
+// server/mcp/tools/map/fly-to.ts —— 全文
 export default defineMcpTool({
   ...mcpToolFrom('fly-to'),
   handler: input => input
@@ -141,9 +147,11 @@ export default defineMcpTool({
 >
 > 它的返回类型必须**显式标注**为 `(typeof TOOLS)[N]['input']`。若交给 TS 推断，泛型 `N` 未实例化时它会在约束上做属性访问，把 `inputSchema` 求值成全部工具 shape 的并集，handler 的入参随之退化为 `any`——`pnpm typecheck` 会以 16 条 `TS7006 implicitly has an 'any' type` 报出来。
 
-新增一个工具：契约加一条 → `server/mcp/tools/<name>.ts` 补 handler →（若要驱动画布）applicator 加一条。`createDefine<TState, TCtx>()` 产出的 `define()` 会在模块初始化时断言「有 applicator 就必须有 output schema」，避免忘写契约 output 导致运行时静默跳过。
+新增一个工具：契约加一条 → `server/mcp/tools/<workspace>/<name>.ts` 补 handler →（若要驱动画布）在该工作区的 applicator 表里加一条。放进哪个子目录就属于哪个工作区，无需在别处登记。
 
-> ⚠️ **新增工具文件后必须重启 dev server**。mcp-toolkit 的虚拟模块 `#nuxt-mcp-toolkit/tools.mjs` 只在启动时扫描 `server/mcp/tools/` 目录，HMR 不会重扫。不重启的话工具集里没有新工具，但 system prompt 里已经写了它——模型会把工具调用当成正文吐出来（`<tool_call>generate-form(, , ]...`），聊天流里没有工具气泡、画布毫无反应，却言之凿凿地说自己做完了。判据：**没有工具气泡而模型声称做了事，就是工具没注册**。详见 [autoform-form-workspace-reference.md](./autoform-form-workspace-reference.md) 的 9.1。
+> `createDefine()` 曾在模块初始化时断言「有 applicator 就必须有 output schema」。`output` 改为可选覆盖后该条件恒成立，断言已删除。
+
+> ⚠️ **新增工具文件后必须重启 dev server**。mcp-toolkit 的虚拟模块 `#nuxt-mcp-toolkit/tools.mjs` 只在启动时扫描 `server/mcp/tools/` 目录，HMR 不会重扫。**移动**工具文件（如按工作区分子目录重排）同样要重启，失败模式一模一样。不重启的话工具集里没有新工具，但 system prompt 里已经写了它——模型会把工具调用当成正文吐出来（`<tool_call>generate-form(, , ]...`），聊天流里没有工具气泡、画布毫无反应，却言之凿凿地说自己做完了。判据：**没有工具气泡而模型声称做了事，就是工具没注册**。详见 [autoform-form-workspace-reference.md](./autoform-form-workspace-reference.md) 的 9.1。
 
 ### 4.2 工具清单 ✅
 
@@ -244,18 +252,19 @@ export default defineMcpTool({
 契约层：
 
 - [shared/utils/tools/map/](../../shared/utils/tools/map/) —— 22 个工具的契约（`camera` / `annotation` / `visualization` / `compute` / `tianditu` / `draw` 六个域文件 + `index.ts` 汇总 `MAP_TOOLS`）
-- [shared/utils/tools/index.ts](../../shared/utils/tools/index.ts) —— `TOOLS` / `getTool` / `ToolOutput<N>`，与工作区无关
-- [shared/utils/workspace.ts](../../shared/utils/workspace.ts) —— `Workspace` 类型与 `WORKSPACES` 常量
+- [shared/utils/tools/types.ts](../../shared/utils/tools/types.ts) —— `ToolContract`（不含 `workspaces`，`output` 可选）
+- [shared/utils/tools/index.ts](../../shared/utils/tools/index.ts) —— `TOOLS` / `getTool` / `getToolOutputSchema` / `ToolOutput<N>`，与工作区无关
+- [shared/utils/workspace.ts](../../shared/utils/workspace.ts) —— `Workspace` 类型与 `WORKSPACES` 常量（`global` / `map` / `form` / `data`）
 
 服务端：
 
 - [server/utils/mcp/mcp-tool.ts](../../server/utils/mcp/mcp-tool.ts) —— `mcpToolFrom(name)`，契约 → `defineMcpTool` 描述性字段
-- [server/utils/mcp/tools.ts](../../server/utils/mcp/tools.ts) —— mcp-toolkit → AI SDK 桥接，按契约的 `workspaces` 过滤
+- [server/utils/mcp/tools.ts](../../server/utils/mcp/tools.ts) —— mcp-toolkit → AI SDK 桥接，按 `_meta.group`（= 子目录名 = 工作区）过滤；读取要写成 `def.group ?? def._meta?.group`
 - [server/utils/mcp/tianditu.ts](../../server/utils/mcp/tianditu.ts) —— `useTianditu()` 客户端单例 + `toPoiResults()`
 - [server/utils/chat-prompts.ts](../../server/utils/chat-prompts.ts) —— `copilotSystemPrompt` / `WORKSPACE_BRIEF.map`
 - [server/utils/workspace-context.ts](../../server/utils/workspace-context.ts) —— 按工作区 zod 校验并分发客户端上下文快照
 - [server/utils/drawn-features.ts](../../server/utils/drawn-features.ts) —— `summarizeDrawnFeatures()`，手绘要素 → system prompt 摘要
-- [server/mcp/tools/](../../server/mcp/tools/) —— 22 个 handler，每个文件只剩它独有的计算
+- [server/mcp/tools/map/](../../server/mcp/tools/map/) —— 22 个 handler，每个文件只剩它独有的计算；`form/` 是另外 7 个
 - [server/mcp/index.ts](../../server/mcp/index.ts) —— `/mcp` 鉴权中间件
 - [server/api/chats/[id].post.ts](../../server/api/chats/%5Bid%5D.post.ts) —— 接入 `getToolsForWorkspace(chat.workspace)`
 
@@ -270,7 +279,7 @@ export default defineMcpTool({
 - [app/composables/useDrawnFeatures.ts](../../app/composables/useDrawnFeatures.ts) —— 手绘要素独立 `useState`（刻意不进纯归约状态，见 8.2）+ `usePendingDrawColor()` 挂起颜色
 - [app/pages/workspace/map.vue](../../app/pages/workspace/map.vue) —— `map-id` + 声明式渲染 + `<MapboxDrawControl>`（`drawThemeStyles` + `@create` 落色）
 - [app/components/CopilotPanel.vue](../../app/components/CopilotPanel.vue) —— 调用 `useMapToolDispatch` 的作用域
-- [app/components/chat/message/MessageContent.vue](../../app/components/chat/message/MessageContent.vue) —— 工具状态文案（读契约的 `status`）
+- [app/components/chat/message/MessageContent.vue](../../app/components/chat/message/MessageContent.vue) —— 工具气泡的状态文案与图标（读契约的 `status` / `icon`）
 - [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts) —— Copilot 侧栏快捷提示，写成带动机的真实场景（常触发多工具串联），整体仍覆盖全部工具与关键参数路径
 
 `@movk/mapbox` 包（源码在 `/Users/yixuanmiao/Projects/movk-mapbox`）：
@@ -424,4 +433,4 @@ system prompt 不落库，所以 LLM 每轮看到的都是**当前**手绘快照
 
 ### 8.3 包侧发布流程
 
-包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（契约加一条 + 新增 `server/mcp/tools/*.ts` + applicator 加一条）。发版前包侧改动可先用 pkg.pr.new 的预览构建（`package.json` 指向 `https://pkg.pr.new/@movk/mapbox@<commit>`）在 studio 里跑通，定版后再切回版本号——绘制这轮即如此，现已发布 1.2.0 并切回 `^1.2.0`。`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 需同步登记新版本（当前是 `@movk/mapbox@1.2.0`），否则新发的包会被发布时长阈值挡住。
+包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（契约加一条 + 新增 `server/mcp/tools/map/*.ts` + applicator 加一条）。发版前包侧改动可先用 pkg.pr.new 的预览构建（`package.json` 指向 `https://pkg.pr.new/@movk/mapbox@<commit>`）在 studio 里跑通，定版后再切回版本号——绘制这轮即如此，现已发布 1.2.0 并切回 `^1.2.0`。`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 需同步登记新版本（当前是 `@movk/mapbox@1.2.0`），否则新发的包会被发布时长阈值挡住。

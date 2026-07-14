@@ -1,8 +1,8 @@
 # AI 表单构建器参考资料：@movk/nuxt AutoForm 落地 form 工作区
 
-> 面向 movk-studio「form 工作区」的实现参考。整理 form 与 map 的同构关系、`@movk/nuxt` AutoForm 真实可调用接口清单、`FormSchema` 契约与编译器设计，以及 12 个 form 工具的落地结果。当前形态：契约（`shared/utils/tools/form/`）+ handler（`server/mcp/tools/`）+ applicator（`app/utils/form-tool-applicators.ts`）三层，与 map 共用同一套泛化后的工具层与派发器（`shared/utils/tools/` + `useToolDispatch`）。
+> 面向 movk-studio「form 工作区」的实现参考。整理 form 与 map 的同构关系、`@movk/nuxt` AutoForm 真实可调用接口清单、`FormSchema` 数据模型与语义表设计，以及 7 个 form 工具的落地结果。当前形态：契约（`shared/utils/tools/form/`）+ handler（`server/mcp/tools/form/`）+ applicator（`app/utils/form-tool-applicators.ts`）三层，与 map 共用同一套泛化后的工具层与派发器（`shared/utils/tools/` + `useToolDispatch`）。
 >
-> **状态**：12 个工具已全部落地并端到端验证。第 9 节记录实现中踩到的真实坑。
+> **状态**：7 个工具已落地并端到端验证。表单语义（条件算子 / 校验规则 / 分组遍历）收敛在 [shared/utils/form-semantics.ts](../../shared/utils/form-semantics.ts) 的单一真源，由 `pnpm test` 对拍——见 4.2 与 9.5。第 9 节记录实现中踩到的真实坑。
 
 ## 1. 背景
 
@@ -216,23 +216,24 @@ AUTOFORM_PATTERNS = { EVENT_PROP: /^on[A-Z]/ }
 
 form 的画布状态，对应 map 的 `MapWorkspaceState`。放在 `shared/utils/form-schema.ts`——服务端拼 system prompt 也要用（见 4.4）。
 
+**该文件里 zod schema 是唯一真源，下面这些类型全部由 `z.infer` 派生**（`export type FormField = z.infer<typeof fieldSchema>`）。曾经是手写 interface + 一份独立的 `tools/form/shapes.ts` 双写，两份逐字段镜像、连字段说明都重复，且没有任何交叉校验兜底——改一处漏一处不报错。字段说明统一由 `.describe()` 承载（AI 选参数要读它），工具契约、服务端上下文校验、编译器共用同一批 schema。
+
+**表单只是结构**：字段 + 校验 + 布局。标题、说明、提交按钮文案曾经也在这里，后来整体删除——它们是页面级展示文案而非表单结构，却撑起了一个专属工具（`set-form-meta`）、画布与 codegen 两处 heading 拼接、prompt 摘要的 header 与三处 `|| '提交'` 兜底；而导出的组件里那段 heading，使用者必然自己重写。
+
 ```ts
-export interface FormSchema {
-  title: string
-  description?: string
-  submitText?: string
+interface FormSchema {
   groups: FormGroup[]        // 空数组 = 不分组
   fields: FormField[]        // 扁平有序数组，name 唯一
 }
 
-export interface FormGroup {
+interface FormGroup {
   id: string
   title?: string
   columns?: 1 | 2 | 3
   collapsible?: boolean
 }
 
-export interface FormField {
+interface FormField {
   name: string               // 唯一标识 + 表单数据键；所有工具据此定位
   type: FieldType
   label: string
@@ -247,7 +248,7 @@ export interface FormField {
 }
 ```
 
-**为什么扁平而非嵌套**：3.5 已证明分组不嵌套数据。扁平数组让 `add-field` / `update-field` / `remove-field` / `reorder-fields` 全部按 `name` 一把定位，工具语义最简单，LLM 也最容易命中。嵌套树会逼工具接受路径参数（`groups[0].fields[2]`），既脆弱又难让 LLM 写对。分组由编译器在组装 afz shape 时还原。
+**为什么扁平而非嵌套**：3.5 已证明分组不嵌套数据。扁平数组让 `upsert-field` / `remove-field` / `reorder-fields` 全部按 `name` 一把定位，工具语义最简单，LLM 也最容易命中。嵌套树会逼工具接受路径参数（`groups[0].fields[2]`），既脆弱又难让 LLM 写对。分组由编译器在组装 afz shape 时还原。
 
 **`FieldType`**（策展枚举，每项绑定一组「工厂方法 + 默认控件」）：
 
@@ -282,17 +283,46 @@ interface FieldCondition {
 }
 ```
 
-编译器把它变成 `meta.if = ctx => evalCondition(cond, ctx.state)`，`evalCondition` 是本地纯函数。
+编译器把它变成 `meta.if = ctx => evalCondition(cond, ctx.state)`，`evalCondition` 是本地纯函数（求值表在 `form-semantics`，见 4.2）。
 
-### 4.2 编译器与代码生成（两个纯函数）
+### 4.2 语义表：一个概念只定义一次
 
-- [app/utils/form-compiler.ts](../../app/utils/form-compiler.ts) —— `compileFormSchema(schema, afz): z.ZodObject`。按 `groups` 把字段装进 `afz.layout({ component: FormGroup, props: { title, collapsible, columns }, fields })`，无分组字段直接进顶层 shape。
+[shared/utils/form-semantics.ts](../../shared/utils/form-semantics.ts) 是表单语义的唯一真源，被**三个消费者**共享：画布编译（`form-compiler`）、代码导出（`form-codegen`）、prompt 摘要（`form-context`，在服务端——所以这张表必须放 `shared/`）。
+
+早先这三者各写一份实现：条件求值是三个八分支 `switch`，校验规则是三套 if 链，「首次遇到分组就地展开」的遍历循环也有三份，靠「必须与 XX 保持一致」的注释维系。**这不是理论风险，已经真的漂移了**：`evalCondition` 的 `gt/lt` 要求 `typeof === 'number'` 严格判断，而 codegen 生成的是 `Number(x) > v`——同一个表单，预览里不显示的字段在导出的代码里会显示。
+
+现在每条语义只定义一次，并同时给出三个视图：
+
+| 语义 | 表 | 三视图 |
+| --- | --- | --- |
+| 条件算子（8 个） | `CONDITION_OPS` | `test`（求值）/ `code`（生成表达式）/ `label`（说人话） |
+| 校验规则 | `activeRules(type, validation)` | `apply`（套到 zod 上）/ `code`（afz 链上的一节）/ `label` |
+| 分组展开顺序 | `walkForm(schema)` | 唯一的遍历，三处消费同一个 `FormNode[]` |
+| 字段类型 → 工厂 + 控件 | `FIELD_SPEC` | 共用 |
+| 栅格类名 | `COLUMN_CLASS` | 编译器与 `FormGroup.vue` 共用 |
+
+`activeRules` 是关键设计：它在内部完成「哪条规则适用于哪个类型」的筛选、取值、算文案，返回**已绑定值**的三视图数组。于是三个消费者各自只剩一行——
+
+```ts
+// 预览：form-compiler
+activeRules(field.type, field.validation).reduce((schema, rule) => rule.apply(schema), base)
+// 导出：form-codegen
+activeRules(field.type, field.validation).map(rule => rule.code)
+// prompt：form-context
+activeRules(field.type, field.validation).map(rule => rule.label)
+```
+
+非法正则由 `pick` 统一剔除，三处自动一致地跳过它，不必各自漏判。
+
+**三视图同义由 [test/form-semantics.spec.ts](../../test/form-semantics.spec.ts) 对拍保证**：把 `CONDITION_OPS[op].code()` 生成的表达式源码用 `new Function` 真跑起来，与 `test()` 逐样本比对。「画布预览与导出代码语义一致」由此成为可执行断言，而不再是一句注释。
+
+两个消费者本身：
+
+- [app/utils/form-compiler.ts](../../app/utils/form-compiler.ts) —— `compileFormSchema(schema, afz): z.ZodObject`。消费 `walkForm`，把分组装进 `afz.layout({ component: FormGroup, props: { title, collapsible, columns }, fields })`，无分组字段直接进顶层 shape。
 
   控件 key 与 `controlProps` 全部来自运行时 JSON，与 afz 按控件 key 静态收窄的重载对不上号，故整个编译器**只在 `fieldMeta()` 一处收口成 `never`**，其余保持类型安全。
 
-- [app/utils/form-codegen.ts](../../app/utils/form-codegen.ts) —— `generateFormCode(schema): string`，产出**完整的 Vue 单文件组件**：`<script setup>` 里是 afz schema、`z.output` 推导的表单类型与 `onSubmit`，`<template>` 里是标题与 `<MAutoForm>`。经 `$prettier` 格式化（`parser: 'vue'`）后展示在代码页签，`export-form-code` 下载同一份产物。
-
-**两者共用 `FIELD_SPEC` / `fieldControlProps` / `RULE_MESSAGE` / `compileRegExp`**（都从 form-compiler 导出）。各写一套的话，导出的代码会与画布上的预览悄悄漂移——正是 map 文档 4.1 记的「一个工具摊在四张表里，漏改一处不报错只静默失效」的同类反模式。
+- [app/utils/form-codegen.ts](../../app/utils/form-codegen.ts) —— `generateFormCode(schema): string`，产出**完整的 Vue 单文件组件**：`<script setup>` 里是 afz schema、`z.output` 推导的表单类型与 `onSubmit`，`<template>` 里只有一个 `<MAutoForm>`。经 `$prettier` 格式化（`parser: 'vue'`）后展示在代码页签，`export-form-code` 下载同一份产物。
 
 导出代码的一处已知损耗：分组只保留栅格 `class`，丢掉标题与折叠（那需要一个容器组件，导出到别的项目里没有）。codegen 会在分组上方留注释说明。
 
@@ -310,20 +340,21 @@ useState<Record<string, unknown>>('form-values', () => ({}))  // 填写值：用
 
 已收敛为通用通道：`useWorkspaceContext(workspace)` → 请求体 `workspaceContext` → 服务端 `summarizeWorkspaceContext(workspace, raw)` 按工作区做 zod 边界校验后分发给 `summarizeDrawnFeatures`（已有）或 `summarizeForm`（新增）。空表单不注入——AI 该做的是 `generate-form`，给它一份空结构只是浪费 token。
 
-**为什么必须注入而不是让 AI 自己从工具历史里重建**：`generate-form` 之后跟 5 次 `update-field`，要算出当前结构就是把归约算法在脑子里跑一遍——LLM 做这个既贵又不可靠，一旦消息被编辑/截断更是必错。注入一份当前快照是几百 token 的事，换来的是每次增量编辑都命中正确字段。
+**为什么必须注入而不是让 AI 自己从工具历史里重建**：`generate-form` 之后跟 5 次 `upsert-field`，要算出当前结构就是把归约算法在脑子里跑一遍——LLM 做这个既贵又不可靠，一旦消息被编辑/截断更是必错。注入一份当前快照是几百 token 的事，换来的是每次增量编辑都命中正确字段。
 
 `summarizeForm` 产出紧凑文本而非裸 JSON，且**必须带 `name` 列**——AI 靠它定位字段：
 
 ```text
-当前表单「员工入职登记表」
 分组：basic「基本信息」2 列；contact「联系方式」1 列，可折叠
-字段（按顺序）：
-1. name    text   「姓名」    必填  组 basic  校验：最少 2 字符
+当前表单的字段（按展示顺序）：
+1. name    text   「姓名」    必填  组 basic  校验：最少 2 个字符
 2. hasCar  switch 「是否有车」 选填  组 basic
-3. plate   text   「车牌号」  选填  组 basic  显示条件：hasCar 为 true
-用户已填：name=张三
-修改表单时用上面的字段名定位，调用 update-field / set-field-validation 等工具。
+3. plate   text   「车牌号」  选填  组 basic  显示条件：hasCar 有值
+用户当前填写的值：name=张三
+修改表单时用上面第二列的 name 定位字段，调用 upsert-field 等增量工具。
 ```
+
+字段行里的「校验」与「显示条件」两列都由 4.2 的语义表渲染（`activeRules(...).map(r => r.label)` 与 `CONDITION_OPS[op].label`），与画布、导出代码同源。
 
 与 map 的手绘注入一样：system prompt 不落库，LLM 每轮看到的都是**当前**快照，历史轮次不残留旧快照。
 
@@ -343,38 +374,53 @@ map 工作区行为零变化（已实测：地名解析 → 飞行定位 → 落
 
 [shared/utils/form-schema.ts](../../shared/utils/form-schema.ts) + [useFormWorkspace.ts](../../app/composables/useFormWorkspace.ts) + [FormGroup.vue](../../app/components/form/FormGroup.vue) + [form-compiler.ts](../../app/utils/form-compiler.ts) + [form.vue](../../app/pages/workspace/form.vue)。
 
-### 5.3 工具（12 个）✅
+### 5.3 工具（7 个）✅
 
-契约全部在 [shared/utils/tools/form/](../../shared/utils/tools/form/)，`workspaces: ['form']`。handler 一律是 echo 薄壳——form 工具是纯客户端状态操作，服务端无活可干（与 map 的 `fly-to` / `set-basemap` 同类）。
+契约全部在 [shared/utils/tools/form/](../../shared/utils/tools/form/)。handler 一律是 echo 薄壳——form 工具是纯客户端状态操作，服务端无活可干（与 map 的 `fly-to` / `set-basemap` 同类）。
 
 | 契约文件 | 工具 | handler | applicator |
 | --- | --- | --- | --- |
 | `schema.ts` | `generate-form` | echo | `reduce`（整体替换） |
 | | `clear-form` | echo | `reduce`（复位） |
-| | `set-form-meta` | echo | `reduce`（只覆盖传了的键） |
-| `fields.ts` | `add-field` | echo | `reduce`（先剔同名再插入） |
-| | `update-field` | echo | `reduce`（按 name 局部更新） |
+| | `export-form-code` | 缺省文件名 | `effect`，**不** `replayOnLoad` |
+| `fields.ts` | `upsert-field` | echo | `reduce`（按 name 增或改） |
 | | `remove-field` | echo | `reduce` |
 | | `reorder-fields` | echo | `reduce`（未列出的字段接在后面） |
-| `validation.ts` | `set-field-validation` | echo | `reduce`（整体替换校验规则） |
-| | `set-field-options` | echo | `reduce`（整体替换选项） |
 | `layout.ts` | `set-layout` | echo | `reduce`（整体替换 groups + 字段归属） |
-| `condition.ts` | `set-field-condition` | echo | `reduce`（传 null 清除） |
-| `export.ts` | `export-form-code` | 缺省文件名 | `effect`，**不** `replayOnLoad` |
 
-> 校验与选项同住 `validation.ts`（都是「字段取值规则」），没有单独的 `options.ts`。
+**曾经是 12 个**：`add-field` / `update-field` / `set-field-validation` / `set-field-options` / `set-field-condition` 已合并为 `upsert-field`。那套切分是人为的——`update-field` 特意 `omit` 掉 options/validation/condition，纯粹为了给三个 `set-field-*` 腾位置；而这五个工具做的是同一件事：按 `name` 定位，改这个字段的某几项。每个工具要碰 4 个落点（契约 / echo 文件 / applicator / prompt 里手写的工具目录），砍掉 5 个就是砍掉 20 处。
 
-全部 `reduce` 幂等且不可变更新（不原地 mutate `draft.fields`）——状态每次都由全部消息重放重建。`add-field` 先按 name 剔重再插入，重放时不会累积出重复字段；`set-layout` 让指向已删除分组的字段回到顶层，否则编译器会把它们当无分组处理却仍留着脏 `group` 值。
+`upsert-field` 的三态约定（`patchField`）：**未传的键保持原样，传 `null` 的键清除，其余覆盖**。name 已存在即修改，不存在即新增（`type` 与 `label` 由契约要求 AI 在新增时必传，漏传时兜底为 `text` / `name`，不让画布崩）。
+
+全部 `reduce` 幂等且不可变更新（不原地 mutate `draft.fields`）——状态每次都由全部消息重放重建。`upsert-field` 按 name 定位天然幂等，重放时不会累积出重复字段；`set-layout` 让指向已删除分组的字段回到顶层，否则编译器会把它们当无分组处理却仍留着脏 `group` 值。
 
 `export-form-code` 不 `replayOnLoad` 的理由与 `export-image` 完全相同：刷新页面不该重复触发一次下载。form 的 effect ctx 是 `{ schema: Ref<FormSchema>, format }`——codegen 要读当前完整状态，下载前还要过一遍 `$prettier`。
+
+#### 工具属于哪个工作区：由目录回答
+
+`server/mcp/tools/` 下按工作区分子目录（`map/` 22 个、`form/` 7 个）。mcp-toolkit 递归扫描时把**子目录名作为 `group` 注入 `_meta.group`**，而目录名恰好就是 workspace 名，于是 [tools.ts](../../server/utils/mcp/tools.ts) 直接按 `group` 过滤下发给 `streamText`。
+
+契约里因此**没有 `workspaces` 字段**了。它曾经存在于 34 个契约里且无一是多值的——数组是过度设计，且让「这个工具属于哪个工作区」这件事同时写在契约与（无信息的）文件位置两处。现在 `ls server/mcp/tools/form/` 就是权威工具清单。
+
+> 读取要写成 `def.group ?? def._meta?.group`：`def.group` 只在工具文件里显式声明 `group` 时才有，目录推断出来的落在 `_meta.group` 上。
+
+#### 工具回显不必再抄一遍输入
+
+form 的 handler 全是 `input => input`，而契约里每个工具又写一份 `output: z.object(sameShape)`，客户端再 `safeParse` 一遍——三层机器只为验证服务端把参数原样退了回来。
+
+现在 `ToolContract.output` 是**可选覆盖**：省略即按 `z.object(input)` 校验回显（`getToolOutputSchema()` 带缓存，因为流式期每 token 都会对全部历史工具调用跑一次），`ToolOutput<N>` 的类型也随之从 `input` 推导。只有服务端真的加工过输出的工具才声明 `output`——form 侧仅剩 `export-form-code` 一个（它补默认文件名，入参里 `fileName` 可省而回显里必有），正好是这个字段存在的理由。
+
+`createDefine` 里「有 applicator 就必须有 output schema」的断言随之删除（现在恒成立）。`'error' in output` 前置守卫**保留**——它防的是 execute 异常回显 `{ error }` 被 all-optional 的 schema 剥成合法空对象。
 
 ### 5.4 上下文与 prompt ✅
 
 [useWorkspaceContext.ts](../../app/composables/useWorkspaceContext.ts) → 请求体 `workspaceContext`（[[id].post.ts](../../server/api/chats/%5Bid%5D.post.ts)）→ [workspace-context.ts](../../server/utils/workspace-context.ts) 按工作区 zod 校验后分发给 [form-context.ts](../../server/utils/form-context.ts) 的 `summarizeForm`。
 
-`WORKSPACE_BRIEF.form` 写了 12 个工具清单 + 四条选型规则：新表单用 `generate-form` 一次建好、局部调整一律走增量工具、`set-field-*` / `set-layout` 是整体替换而非合并、字段类型优先选语义最贴切的（手机号用 `phone` 而不是 `text`）。
+`WORKSPACE_BRIEF.form` **只写策略，不写工具清单**：新表单用 `generate-form` 一次建好、局部调整一律走增量工具、`upsert-field` / `set-layout` 的整体替换语义、字段类型优先选语义最贴切的（手机号用 `phone` 而不是 `text`）、分组与条件联动的边界。
 
-`QUICK_CHATS.form` 22 条带动机的真实场景，覆盖全部 12 个工具与关键参数路径——与 map 一样，事实上当 eval 集用。
+曾经它还逐条列了 12 个工具的说明——那是 contract `description` 的另一种措辞，而 AI SDK 早已把 description 随 tool 定义下发了。纯重复，且必然与契约漂移（工具改名后它还在说旧名字）。已删除。
+
+`QUICK_CHATS.form` 22 条带动机的真实场景，覆盖全部工具与关键参数路径——与 map 一样，事实上当 eval 集用。
 
 ### 5.5 代码导出 ✅
 
@@ -382,14 +428,14 @@ map 工作区行为零变化（已实测：地名解析 → 飞行定位 → 落
 
 > 「我想看代码」由代码页签直接满足，零 LLM 成本；工具只负责下载文件。**不**让 codegen 产物穿过 LLM——那是 map 文档 4.3「几何绝不回流 LLM」的同类反模式。
 
-**已验证**：导出的 SFC 原样放进本项目，`pnpm typecheck` 通过，且作为独立组件渲染出的表单与画布预览一致（栅格、控件、默认值、条件隐藏、必填星号、按钮文案全部还原）。
+**已验证**：导出的 SFC 原样放进本项目，`pnpm typecheck` 通过，且作为独立组件渲染出的表单与画布预览一致（栅格、控件、默认值、条件隐藏、必填星号全部还原）。
 
 ## 6. 安全边界
 
 1. **正则**：`pattern` 是 AI 生成的正则源串，编译器里 `new RegExp()` 必须 try/catch（非法正则跳过该条校验而非整表崩），契约 input 加长度上限（200），缓解 ReDoS 卡死用户自己 tab。
 2. **条件联动绝不 eval**：只接受声明式 `{ field, op, value }`，由本地 `evalCondition` 求值。**不接受任何形式的表达式字符串、函数体字符串**，不用 `eval` / `new Function`。
 3. **`controlProps` 直通**：编译器必须剔除 `/^on[A-Z]/` 开头的键（事件处理器注入）。包侧自己也有这个检测正则（`AUTOFORM_PATTERNS.EVENT_PROP`，见 3.6）。
-4. **codegen 转义**：TS 源码里的字符串字面量走 `JSON.stringify()`。但**落在 Vue 模板双引号属性里的字符串不能这么写**——`:submit-button-props="{ label: "立即报名" }"` 的内层双引号会提前闭合属性。那一处必须用单引号字面量（`singleQuoted()`）。模板里的文本节点另走 HTML 转义。
+4. **codegen 转义**：TS 源码里的字符串字面量一律走 `JSON.stringify()`。生成的 `<template>` 里**不含任何 AI 数据的插值**（自从表单不再有标题与提交按钮文案，模板就只剩一个静态的 `<MAutoForm>`），因此曾经的 `singleQuoted()` / `escapeText()` 已一并删除。若将来往模板里插入 AI 产出的文案，注意 `JSON.stringify` 在这里是错的——`:foo="{ label: "文案" }"` 的内层双引号会提前闭合属性，那种位置必须用单引号字面量，文本节点则走 HTML 转义。
 5. **上下文注入边界校验**：`workspaceContext` 来自客户端，服务端用 zod 校验并加尺寸上限（分组 ≤ 20、字段 ≤ 100），单个已填值截断到 60 字符。
 
 ## 7. 已知限制
@@ -403,10 +449,15 @@ map 工作区行为零变化（已实测：地名解析 → 飞行定位 → 落
 
 契约层：
 
-- [shared/utils/tools/](../../shared/utils/tools/) —— 泛化后的工具契约（`map/` + `form/` 两个子目录 + `index.ts` 汇总 `TOOLS` / `getTool` / `ToolOutput<N>`）
-- [shared/utils/tools/form/shapes.ts](../../shared/utils/tools/form/shapes.ts) —— 12 个 form 工具共用的 zod 形状，逐一对应 `form-schema.ts` 的类型
-- [shared/utils/form-schema.ts](../../shared/utils/form-schema.ts) —— `FormSchema` / `FormField` / `FieldType` / `createFormSchema()`
+- [shared/utils/tools/](../../shared/utils/tools/) —— 工具契约（`map/` + `form/` 两个子目录 + `index.ts` 汇总 `TOOLS` / `getTool` / `getToolOutputSchema` / `ToolOutput<N>`）；form 侧 3 个域文件装 7 个工具。契约不声明工作区（由 `server/mcp/tools/<workspace>/` 的目录归属决定），也不必声明 `output`（默认按 `input` 校验回显）
+- [shared/utils/tools/types.ts](../../shared/utils/tools/types.ts) —— `ToolContract` 的六个字段：`description` / `input` / `output?` / `icon?` / `status` / `annotations?`。`icon`（Iconify 名）与 `status`（进行时 / 完成态文案）供 [MessageContent.vue](../../app/components/chat/message/MessageContent.vue) 渲染工具气泡，字段逐条说明见 [mcp-toolkit-map-tools-reference.md](./mcp-toolkit-map-tools-reference.md) 的 4.1
+- [shared/utils/form-schema.ts](../../shared/utils/form-schema.ts) —— form **数据模型**的唯一真源：zod schema（`fieldSchema` / `groupSchema` / `formSchema` …）+ `z.infer` 派生的类型 + `FIELD_TYPES` / `createFormSchema()`
+- [shared/utils/form-semantics.ts](../../shared/utils/form-semantics.ts) —— form **语义**的唯一真源：`CONDITION_OPS`（八个条件算子 × 求值/生成代码/说人话）、`activeRules()`（校验规则的三视图）、`walkForm()`（唯一的分组展开遍历）、`FIELD_SPEC` / `COLUMN_CLASS` / `fieldControlProps` / `compileRegExp`。编译器、codegen、prompt 摘要三处共同消费，见 4.2
 - [shared/utils/workspace.ts](../../shared/utils/workspace.ts) —— `Workspace` 类型与 `WORKSPACES` 常量
+
+测试：
+
+- [test/form-semantics.spec.ts](../../test/form-semantics.spec.ts) —— 语义表的对拍（`pnpm test`）：条件算子的 `code()` 产物真跑起来与 `test()` 比对、校验规则的运行时文案与代码文案一致、`walkForm` 的三种边界
 
 服务端：
 
@@ -414,8 +465,8 @@ map 工作区行为零变化（已实测：地名解析 → 飞行定位 → 落
 - [server/utils/form-context.ts](../../server/utils/form-context.ts) —— `summarizeForm()`，表单结构 + 填写值 → system prompt 摘要
 - [server/utils/chat-prompts.ts](../../server/utils/chat-prompts.ts) —— `WORKSPACE_BRIEF.form`
 - [server/utils/mcp/mcp-tool.ts](../../server/utils/mcp/mcp-tool.ts) —— `mcpToolFrom(name)`，返回类型必须显式标注（见 map 文档 4.1 的 TS7006 坑）
-- [server/utils/mcp/tools.ts](../../server/utils/mcp/tools.ts) —— mcp-toolkit → AI SDK 桥接，按契约的 `workspaces` 过滤
-- [server/mcp/tools/](../../server/mcp/tools/) —— 12 个 form handler（全部 echo 薄壳）
+- [server/utils/mcp/tools.ts](../../server/utils/mcp/tools.ts) —— mcp-toolkit → AI SDK 桥接，按 `_meta.group`（= 子目录名 = 工作区）过滤
+- [server/mcp/tools/form/](../../server/mcp/tools/form/) —— 7 个 form handler（全部 echo 薄壳）；`map/` 是另外 22 个
 
 客户端：
 
@@ -425,8 +476,8 @@ map 工作区行为零变化（已实测：地名解析 → 飞行定位 → 落
 - [app/composables/useWorkspaceContext.ts](../../app/composables/useWorkspaceContext.ts) —— 按工作区产出上传给服务端的上下文快照
 - [app/utils/tool-applicators.ts](../../app/utils/tool-applicators.ts) —— `ToolApplicator<TState, TCtx>` 与 `createDefine()`
 - [app/utils/form-tool-applicators.ts](../../app/utils/form-tool-applicators.ts) —— form 工具 → 「对表单做什么」
-- [app/utils/form-compiler.ts](../../app/utils/form-compiler.ts) —— `FormSchema` → `z.ZodObject`；`FIELD_SPEC` / `RULE_MESSAGE` / `fieldControlProps` 的真源
-- [app/utils/form-codegen.ts](../../app/utils/form-codegen.ts) —— `FormSchema` → Vue SFC 源码
+- [app/utils/form-compiler.ts](../../app/utils/form-compiler.ts) —— `FormSchema` → `z.ZodObject`（消费 form-semantics）
+- [app/utils/form-codegen.ts](../../app/utils/form-codegen.ts) —— `FormSchema` → Vue SFC 源码（消费 form-semantics）
 - [app/pages/workspace/form.vue](../../app/pages/workspace/form.vue) —— 画布（预览 / 代码双页签）
 - [app/components/form/FormGroup.vue](../../app/components/form/FormGroup.vue) —— 分组容器（标题 + 栅格 + 折叠）
 - [app/plugins/prettier.ts](../../app/plugins/prettier.ts) —— `$prettier`，格式化生成的代码
@@ -447,7 +498,9 @@ map 工作区行为零变化（已实测：地名解析 → 飞行定位 → 落
 
 ### 9.1 模型把工具调用当文本吐出来：mcp-toolkit 的工具表只在启动时扫描
 
-12 个 form 工具的契约、handler、applicator 全部写好后，第一次实测 `帮我做一份员工入职登记表`，模型回了一段这样的正文：
+> 后续补充：**移动**工具文件（如按工作区分子目录重排）同样要重启，失败模式一模一样。
+
+form 工具的契约、handler、applicator 全部写好后，第一次实测 `帮我做一份员工入职登记表`，模型回了一段这样的正文：
 
 ```text
 好的，我来为你生成一份完整的员工入职登记表。<tool_call>generate-form(, , ], "group": "基本信息" },
@@ -459,7 +512,7 @@ map 工作区行为零变化（已实测：地名解析 → 飞行定位 → 落
 
 **错误诊断**：先怀疑 `generate-form` 的 input schema 太复杂，`z.toJSONSchema` 转换时把 `z.unknown()` / `z.record()` 转崩了。实测证伪——单独跑 `z.toJSONSchema(z.object(generateForm))` 完全正常，`defaultValue` 转出 `{}`（any），schema 合法。
 
-**真正根因**：`@nuxtjs/mcp-toolkit` 的工具虚拟模块 `#nuxt-mcp-toolkit/tools.mjs` 是**在 dev server 启动时扫描 `server/mcp/tools/` 目录**生成的。会话中途新增的 12 个 handler 文件不会触发重扫（HMR 只重建了 Nitro，没重建这个虚拟模块）。于是 `getToolsForWorkspace('form')` 返回空工具集——**system prompt 里明明白白写着「你可以调用 generate-form」，但工具集里根本没有它**，模型只能退回自己的内部 `<tool_call>` 文本格式硬凑。
+**真正根因**：`@nuxtjs/mcp-toolkit` 的工具虚拟模块 `#nuxt-mcp-toolkit/tools.mjs` 是**在 dev server 启动时扫描 `server/mcp/tools/` 目录**生成的。会话中途新增的那批 handler 文件不会触发重扫（HMR 只重建了 Nitro，没重建这个虚拟模块）。于是 `getToolsForWorkspace('form')` 返回空工具集——**system prompt 里明明白白写着「你可以调用 generate-form」，但工具集里根本没有它**，模型只能退回自己的内部 `<tool_call>` 文本格式硬凑。
 
 **修复**：重启 dev server。**教训**：新增 MCP 工具文件后必须重启，HMR 不够。这个失败模式极具迷惑性——它看起来像模型能力问题或 schema 问题，实际是工具压根没下发。判据很简单：**聊天流里有没有工具气泡**。没有气泡而模型声称做了事，就是工具没注册。
 
@@ -501,3 +554,15 @@ z.config({
 ```
 
 优先级实测确认：**契约里逐条校验的自定义文案（`最少 2 个字符`）> `customError`（必填）> `zhCN` locale**。`customError` 返回 `undefined` 时会落回 locale，所以只需拦「未填写」这一种情况。
+
+### 9.5 靠注释维系的「三处保持一致」，真的漂了
+
+条件求值（预览）、条件生成代码（导出）、条件说人话（prompt）曾是三个独立的八分支 `switch`，分散在 `form-compiler` / `form-codegen` / `form-context` 里，每处都挂着「语义与 XX 逐条对应」的注释。
+
+**漂移实证**：`gt` / `lt` 两个算子，`evalCondition` 写的是 `typeof actual === 'number' && typeof value === 'number' && actual > value`，而 codegen 生成的是 `Number(ctx.state.x) > 3`。字段值是字符串 `"5"` 时（文本框输入的数字就是字符串），**画布预览里该字段不显示，导出的代码里却显示**。同一份 schema，两套行为。
+
+没人改错任何一行——三份实现从第一天起就不同义，而注释说它们相同。审查时三个文件不在同一屏，没人把八个分支逐条对过。
+
+**修复**：`shared/utils/form-semantics.ts` 把每条语义收成一行、三列（`test` / `code` / `label`），并用 `new Function` 把 `code()` 的产物真跑起来与 `test()` 对拍（[test/form-semantics.spec.ts](../../test/form-semantics.spec.ts)）。`gt` / `lt` 统一为 JS 的数值强制转换语义。
+
+**教训**：「必须与 XX 保持一致」的注释是一张欠条，不是一个约束。同一份语义要在 N 个地方各写一遍时，正确做法是把它抽成一张表、N 个视图，再写一个断言这 N 个视图同义的测试——而不是写 N 遍并互相叮嘱。这类重复的成本不在写，在于**读**：理解「条件显示」这一个功能要跳三个文件，而这正是这套代码后来变得看不懂的直接原因。
