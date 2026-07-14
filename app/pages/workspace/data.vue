@@ -53,50 +53,59 @@ const { copy, copied } = useClipboard()
 
 <template>
   <div class="flex-1 min-h-0 flex flex-col">
-    <div v-if="isEmpty" class="flex-1 flex items-center justify-center p-6">
-      <div class="flex flex-col items-center gap-3 text-center max-w-sm">
-        <UIcon name="i-lucide-table" class="size-10 text-dimmed" />
-        <p class="text-sm text-muted">
-          告诉 Copilot 你想要什么表格，例如「做一张员工花名册」。列、示例数据与交互能力会实时出现在这里，可以直接排序、勾选、翻页试用。
-        </p>
-      </div>
-    </div>
+    <!-- 派发器客户端独占，SSR 期状态恒为空而客户端 hydrate 时已算好，两侧渲染的分支必然不同 -->
+    <ClientOnly>
+      <template #fallback>
+        <div class="flex-1 flex items-center justify-center p-6">
+          <USkeleton class="h-8 w-48" />
+        </div>
+      </template>
 
-    <template v-else>
-      <div class="flex items-center justify-between gap-4 px-6 pt-4">
-        <UTabs
-          v-model="tab"
-          :items="tabs"
-          size="sm"
-          :content="false"
-          class="w-fit"
-        />
-
-        <UButton
-          v-if="tab === 'code'"
-          :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-          :label="copied ? '已复制' : '复制代码'"
-          color="neutral"
-          variant="subtle"
-          size="sm"
-          @click="copy(code)"
-        />
-      </div>
-
-      <div class="flex-1 min-h-0 overflow-y-auto">
-        <div class="flex flex-col gap-6 p-6">
-          <MDataTable
-            v-if="tab === 'preview'"
-            v-model:pagination="pagination"
-            v-model:row-selection="selection"
-            :columns="compiled.columns"
-            :data="compiled.data"
-            v-bind="compiled.props"
-          />
-
-          <ChatComark v-else :markdown="codeMarkdown" />
+      <div v-if="isEmpty" class="flex-1 flex items-center justify-center p-6">
+        <div class="flex flex-col items-center gap-3 text-center max-w-sm">
+          <UIcon name="i-lucide-table" class="size-10 text-dimmed" />
+          <p class="text-sm text-muted">
+            告诉 Copilot 你想要什么表格，例如「做一张员工花名册」。列、示例数据与交互能力会实时出现在这里，可以直接排序、勾选、翻页试用。
+          </p>
         </div>
       </div>
-    </template>
+
+      <template v-else>
+        <div class="flex items-center justify-between gap-4 px-6 pt-4">
+          <UTabs
+            v-model="tab"
+            :items="tabs"
+            size="sm"
+            :content="false"
+            class="w-fit"
+          />
+
+          <UButton
+            v-if="tab === 'code'"
+            :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+            :label="copied ? '已复制' : '复制代码'"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            @click="copy(code)"
+          />
+        </div>
+
+        <div class="flex-1 min-h-0 overflow-y-auto">
+          <div class="flex flex-col gap-6 p-6">
+            <MDataTable
+              v-if="tab === 'preview'"
+              v-model:pagination="pagination"
+              v-model:row-selection="selection"
+              :columns="compiled.columns"
+              :data="compiled.data"
+              v-bind="compiled.props"
+            />
+
+            <ChatComark v-else :markdown="codeMarkdown" />
+          </div>
+        </div>
+      </template>
+    </ClientOnly>
   </div>
 </template>
