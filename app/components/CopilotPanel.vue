@@ -109,6 +109,7 @@ watch(history, (h) => {
 // 工具输出 → 驱动各工作区画布（CopilotPanel 常驻，派发器内部按 workspace 守卫）
 useMapToolDispatch(messages, workspace, chatId)
 useFormToolDispatch(messages, workspace, chatId)
+useTableToolDispatch(messages, workspace, chatId)
 
 function getVote(messageId: string): boolean | null {
   const found = votes.value.find(v => v.messageId === messageId)

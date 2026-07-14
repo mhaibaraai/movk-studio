@@ -3,6 +3,7 @@ import { z as zod } from 'zod'
 import type { ToolContract } from './types'
 import { MAP_TOOLS } from './map'
 import { FORM_TOOLS } from './form'
+import { DATA_TOOLS } from './data'
 
 export type { ToolContract } from './types'
 
@@ -12,7 +13,8 @@ export type { ToolContract } from './types'
  */
 export const TOOLS = {
   ...MAP_TOOLS,
-  ...FORM_TOOLS
+  ...FORM_TOOLS,
+  ...DATA_TOOLS
 }
 
 export type ToolName = keyof typeof TOOLS
