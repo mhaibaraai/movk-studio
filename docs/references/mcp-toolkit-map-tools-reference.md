@@ -1,6 +1,6 @@
 # AI 工具调用参考资料：@nuxtjs/mcp-toolkit 落地 map 工作区工具
 
-> 面向 movk-studio「GIS Copilot」工具调用能力的实现参考。整理手写 tools 与 mcp-toolkit 两种方案的对比、`@movk/mapbox` 真实可调用接口清单，22 个 map 工具的落地结果与契约层架构，以及若干真实 bug 的根因排查记录。当前形态：契约（`shared/utils/map-tools/`）+ handler（`server/mcp/tools/`）+ applicator（`app/utils/map-tool-applicators.ts`）三层，天地图能力全部经 `createTianditu` 客户端。绘制类工具（Tier 3）已随包侧的 `useMapboxDraw({ mapId })` 跨树能力一并落地，见 8。
+> 面向 movk-studio「GIS Copilot」工具调用能力的实现参考。整理手写 tools 与 mcp-toolkit 两种方案的对比、`@movk/mapbox` 真实可调用接口清单，22 个 map 工具的落地结果与契约层架构，以及若干真实 bug 的根因排查记录。当前形态：契约（`shared/utils/tools/map/`）+ handler（`server/mcp/tools/`）+ applicator（`app/utils/map-tool-applicators.ts`）三层，天地图能力全部经 `createTianditu` 客户端。绘制类工具（Tier 3）已随包侧的 `useMapboxDraw({ mapId })` 跨树能力一并落地，见 8。
 
 ## 1. 背景
 
@@ -29,7 +29,7 @@
 ### `@nuxtjs/mcp-toolkit` 关键 API（已核对已发布的 0.17.2 版本源码）
 
 - `defineMcpTool({ name?, title?, description?, inputSchema?, outputSchema?, annotations?, handler, cache? })`：`inputSchema` 是**原始 Zod shape**（不是 `z.object(...)`，模块自己包一层）；`name`/`title` 缺省时从文件名自动生成（kebab-case）。
-- 工具文件放在 `server/mcp/{dir}/tools/*.ts`（`dir` 默认 `mcp`，即 `server/mcp/tools/`），自动发现、自动注册到 `/mcp` 端点。
+- 工具文件放在 `server/mcp/{dir}/tools/*.ts`（`dir` 默认 `mcp`，即 `server/mcp/tools/`），自动发现、自动注册到 `/mcp` 端点。目录是**递归**扫描的，**子目录名会作为 `group` 注入 `_meta.group`**——本项目正是靠它把工具归到工作区（`map/` 22 个、`form/` 7 个），见 4.1。
 - 服务端消费全部工具定义的虚拟导入是 **`#nuxt-mcp-toolkit/tools.mjs`**（导出 `tools` 数组）。
 
   > ⚠️ 踩坑记录：`mcp-toolkit` 源码仓库（未发布的开发分支）里这个路径已经改名为 `#nuxt-mcp/tools.mjs`，但 npm 上已发布、且 nuxt/ui docs 站实际安装跑通的 0.17.2 版本，编译产物（`dist/module.mjs`）里用的仍然是 `#nuxt-mcp-toolkit/tools.mjs` 前缀。以 `npm view @nuxtjs/mcp-toolkit version` 确认的已发布版本为准，不要以源码仓库当前状态为准。
@@ -104,22 +104,30 @@ import { createTianditu } from '@movk/mapbox/utils/tianditu-client'
 
 | 问题 | 位置 |
 | --- | --- |
-| 它长什么样（描述、输入、输出、工作区、状态文案、annotations） | [shared/utils/map-tools/](../../shared/utils/map-tools/) 契约 |
-| 它在服务端算什么 | [server/mcp/tools/](../../server/mcp/tools/) 的 handler |
+| 它长什么样（描述、输入、输出、图标、状态文案、annotations） | [shared/utils/tools/map/](../../shared/utils/tools/map/) 契约 |
+| 它在服务端算什么 | [server/mcp/tools/map/](../../server/mcp/tools/map/) 的 handler |
 | 它对地图做什么 | [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts) |
+| 它属于哪个工作区 | `server/mcp/tools/<workspace>/` 的目录归属（不在契约里） |
 
-契约按域分文件（`camera.ts` / `annotation.ts` / `visualization.ts` / `compute.ts` / `tianditu.ts`），[index.ts](../../shared/utils/map-tools/index.ts) 汇总为 `MAP_TOOLS`：
+契约按域分文件（`camera.ts` / `annotation.ts` / `visualization.ts` / `compute.ts` / `tianditu.ts` / `draw.ts`），`map/index.ts` 汇总为 `MAP_TOOLS`，再由 [shared/utils/tools/index.ts](../../shared/utils/tools/index.ts) 与 `FORM_TOOLS` 合并成 `TOOLS`：
 
 ```ts
-export interface MapToolContract {
-  workspaces: Workspace[]
+export interface ToolContract {
   description: string
   input: ZodRawShape          // 直接作为 defineMcpTool 的 inputSchema
-  output?: ZodType            // 仅需驱动地图的工具声明；纯信息类工具省略
+  output?: ZodType            // 可选覆盖：省略即按 z.object(input) 校验回显
+  icon?: string               // 聊天流气泡的 Iconify 图标名
   status: [string, string]    // 聊天流的进行时 / 完成态文案
-  annotations?: MapToolAnnotations
+  annotations?: McpToolAnnotations
 }
 ```
+
+> 契约里**没有 `workspaces` 字段**，`output` 也**不是必填**——两者都是落地 form 工作区时收敛掉的，理由见 [autoform-form-workspace-reference.md](./autoform-form-workspace-reference.md) 的 5.3：
+>
+> - **工作区由目录回答**。`workspaces` 曾存在于 34 个契约里且无一是多值的；现在 `ls server/mcp/tools/map/` 就是 map 的权威工具清单。
+> - **`output` 是可选覆盖**。handler 原样退回入参的工具（map 侧的 `fly-to` / `fit-bounds` / `set-basemap` / `remove-marker` 等）省略即可，`getToolOutputSchema()` 回落到 `z.object(input)` 校验回显（带缓存：流式期每 token 都会对全部历史工具调用跑一次）。
+
+> **落地 form 工作区时做过一次去 map 化泛化**：契约层从 `shared/utils/map-tools/` 迁到 `shared/utils/tools/`，`MapToolContract` / `MAP_TOOLS` / `getMapTool` 更名为 `ToolContract` / `TOOLS` / `getTool`——这七个字段无一处与地图耦合，是无损重命名。派发器同时泛型化为 `useToolDispatch<TState, TCtx>`，`useMapToolDispatch` 退化为注入地图状态与命令式实例的薄封装。**22 个 handler 零改动**（`mcpToolFrom` 与 `defineMcpTool` 都是自动导入，handler 文件根本不 import 契约层）。详见 [autoform-form-workspace-reference.md](./autoform-form-workspace-reference.md) 的 2.4 与 5.1。
 
 关键在于 `defineMcpTool` 的 `inputSchema` 收的是 **ZodRawShape 裸对象**（不是 `z.object(...)`，模块自己包一层），所以同一份 shape 能直接喂服务端，客户端 `z.object(shape)` 后 `safeParse`。Nuxt 4 的 `shared/` 正是双端共用代码的位置，客户端本来就已 import zod，无包体回归。
 
@@ -128,7 +136,7 @@ export interface MapToolContract {
 服务端工具文件因此只剩它独有的东西：
 
 ```ts
-// server/mcp/tools/fly-to.ts —— 全文
+// server/mcp/tools/map/fly-to.ts —— 全文
 export default defineMcpTool({
   ...mcpToolFrom('fly-to'),
   handler: input => input
@@ -137,9 +145,13 @@ export default defineMcpTool({
 
 > `mcpToolFrom` 住在 [server/utils/mcp/mcp-tool.ts](../../server/utils/mcp/mcp-tool.ts) 而不是 `tools.ts`：后者 import 虚拟模块 `#nuxt-mcp-toolkit/tools.mjs`，而该虚拟模块反过来 import 各工具文件，工具文件若从 `tools.ts` 取定义就会成环。
 >
-> 它的返回类型必须**显式标注**为 `(typeof MAP_TOOLS)[N]['input']`。若交给 TS 推断，泛型 `N` 未实例化时它会在约束上做属性访问，把 `inputSchema` 求值成全部工具 shape 的并集，handler 的入参随之退化为 `any`——`pnpm typecheck` 会以 16 条 `TS7006 implicitly has an 'any' type` 报出来。
+> 它的返回类型必须**显式标注**为 `(typeof TOOLS)[N]['input']`。若交给 TS 推断，泛型 `N` 未实例化时它会在约束上做属性访问，把 `inputSchema` 求值成全部工具 shape 的并集，handler 的入参随之退化为 `any`——`pnpm typecheck` 会以 16 条 `TS7006 implicitly has an 'any' type` 报出来。
 
-新增一个工具：契约加一条 → `server/mcp/tools/<name>.ts` 补 handler →（若要驱动地图）applicator 加一条。`define()` 会在模块初始化时断言「有 applicator 就必须有 output schema」，避免忘写契约 output 导致运行时静默跳过。
+新增一个工具：契约加一条 → `server/mcp/tools/<workspace>/<name>.ts` 补 handler →（若要驱动画布）在该工作区的 applicator 表里加一条。放进哪个子目录就属于哪个工作区，无需在别处登记。
+
+> `createDefine()` 曾在模块初始化时断言「有 applicator 就必须有 output schema」。`output` 改为可选覆盖后该条件恒成立，断言已删除。
+
+> ⚠️ **新增工具文件后必须重启 dev server**。mcp-toolkit 的虚拟模块 `#nuxt-mcp-toolkit/tools.mjs` 只在启动时扫描 `server/mcp/tools/` 目录，HMR 不会重扫。**移动**工具文件（如按工作区分子目录重排）同样要重启，失败模式一模一样。不重启的话工具集里没有新工具，但 system prompt 里已经写了它——模型会把工具调用当成正文吐出来（`<tool_call>generate-form(, , ]...`），聊天流里没有工具气泡、画布毫无反应，却言之凿凿地说自己做完了。判据：**没有工具气泡而模型声称做了事，就是工具没注册**。详见 [autoform-form-workspace-reference.md](./autoform-form-workspace-reference.md) 的 9.1。
 
 ### 4.2 工具清单 ✅
 
@@ -198,24 +210,24 @@ export default defineMcpTool({
 
 - [app/composables/useMapWorkspace.ts](../../app/composables/useMapWorkspace.ts)：**单个** `useState<MapWorkspaceState>('map-workspace', createMapWorkspaceState)` 承载全部状态。早期是 7 个 `useState` + `setState` 里 7 行逐字段赋值，加一个状态字段要改三处；现在只需改 `MapWorkspaceState` 与 `createMapWorkspaceState`。`MapPoi` 直接对齐包的 `Poi` 形状（`location: [lng, lat]` 元组），省去 handler 侧的字段搬运。
 - [app/pages/workspace/map.vue](../../app/pages/workspace/map.vue)：`MapboxMap` 加 `map-id="workspace-map"`，`<MapboxTiandituLayer>`/`<MapboxMarker v-for>`/`<MapboxLayer v-for>`/`<MapboxBufferCircle v-for>` 绑定该状态声明式渲染。
-- [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts)：**工具名 → 客户端应用逻辑**，`HANDLED` 集合由此表派生。早期是 `StateApplicator`/`EffectApplicator`（`kind: 'camera' | 'action'`）三个 interface + 三个工厂函数 + `kind` 判别，而 `kind` 真正编码的只有两位信息；「落图 + 自动相机」恰好是这个互斥模型表达不了的组合。现在合一：
+- [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts)：**工具名 → 客户端应用逻辑**，派发器的 `handled` 集合由此表派生。早期是 `StateApplicator`/`EffectApplicator`（`kind: 'camera' | 'action'`）三个 interface + 三个工厂函数 + `kind` 判别，而 `kind` 真正编码的只有两位信息；「落图 + 自动相机」恰好是这个互斥模型表达不了的组合。现在合一（泛化后住在 [app/utils/tool-applicators.ts](../../app/utils/tool-applicators.ts)，map 绑定 `TState = MapWorkspaceState` / `TCtx = MapEffectContext`）：
 
   ```ts
-  export interface MapToolApplicator {
-    reduce?: (draft: MapWorkspaceState, output) => void        // 状态：随消息重放，必须幂等
-    effect?: (ctx, output, animate: boolean) => void           // 副作用：按 toolCallId 只触发一次
+  export interface ToolApplicator<TState, TCtx> {
+    reduce?: (draft: TState, output: never) => void            // 状态：随消息重放，必须幂等
+    effect?: (ctx: TCtx, output: never, animate: boolean) => void  // 副作用：按 toolCallId 只触发一次
     replayOnLoad?: boolean                                     // 首屏批量落位时是否重放
   }
   ```
 
   `output` schema 不在这里——它属于契约。`fly-to`/`fit-bounds` 的 effect 先经 `omitUndefined`（`@movk/core`）剔除未提供的相机键，根治 7.1 的 `undefined` 键污染。
-- [app/composables/useMapToolDispatch.ts](../../app/composables/useMapToolDispatch.ts)：无模板的纯逻辑 composable，签名 `useMapToolDispatch(messages, workspace, chatId)`。`camera`（`useMapboxCamera({mapId})`）与 `mapExport`（`useMapExport({mapId})`）在 setup 阶段一次性构造（不要放进 `watchEffect` 回调按次构造，否则脱离组件同步栈触发 Vue 注入警告）。核心是 `watchEffect(recompute)`：
+- [app/composables/useToolDispatch.ts](../../app/composables/useToolDispatch.ts)：泛型派发器，无模板的纯逻辑 composable。[useMapToolDispatch.ts](../../app/composables/useMapToolDispatch.ts) 是它的薄封装，签名仍是 `useMapToolDispatch(messages, workspace, chatId)`，负责注入 `useMapWorkspace()` 与 ctx。`camera`（`useMapboxCamera({mapId})`）与 `mapExport`（`useMapExport({mapId})`）在 setup 阶段一次性构造（不要放进 `watchEffect` 回调按次构造，否则脱离组件同步栈触发 Vue 注入警告）。核心是 `watchEffect(recompute)`：
   - **状态 = 消息纯归约**：每次从 `createMapWorkspaceState()` 起，按序归约当前全部 `output-available` 工具输出，整体写入。状态即「当前消息的纯函数」——切换会话、新建、编辑、重生成、删除消息都自动收敛，**无累积泄漏、无需手动重置**（取代旧的「命令式增量 + 全量重放」，见 7.4）。
   - **副作用 = fire-once-on-new**：单个 `seen: Set<string> | null` 同时表达「已触发过的 toolCallId」与「当前会话是否已水合」（`null` 即未水合）。水合时把全部 id 记入 `seen`、只重放最后一个 `replayOnLoad` 的副作用且不带动画（避免刷新时逐个重放飞行动画、重复触发导出下载）；之后每个新 id 即时应用、相机带动画。`watch(chatId)` 把 `seen` 置回 `null` 即完成切换会话的重置。
   - **渲染节流**：流式期每 token 都会触发 `recompute`，用状态签名（`JSON.stringify(draft)`）守卫，仅归约结果变化时才写入。
   - **一处看似冗余、实则必要的守卫**：`parseOutput` 里的 `'error' in output` 前置检查不能删。`execute` 捕获异常后回显 `{ error }`，而 `remove-marker` 的输出字段全为 optional——`{ error: '...' }` 剥离未知键后是合法空对象，**能通过 `z.object` 校验**，进而误触发「移除最近一个标注」。
   - **SSR 守卫**：整个注册包在 `if (import.meta.client)` 内（见 7.2）。
-- [app/components/CopilotPanel.vue](../../app/components/CopilotPanel.vue)：在 `messages`/`workspace`/`chatId` 所在作用域调用一次 `useMapToolDispatch(messages, workspace, chatId)`；`CopilotPanel` 是 layout 级常驻组件，只 setup 一次，composable 内部按 `workspace.value !== 'map'` 守卫。
+- [app/components/CopilotPanel.vue](../../app/components/CopilotPanel.vue)：在 `messages`/`workspace`/`chatId` 所在作用域调用一次 `useMapToolDispatch(messages, workspace, chatId)`（form 的派发器与它并列挂在同一处）；`CopilotPanel` 是 layout 级常驻组件，只 setup 一次，派发器内部按 `workspace.value !== target` 守卫。
 
 ### 4.5 Prompt 设计 ✅
 
@@ -239,29 +251,35 @@ export default defineMcpTool({
 
 契约层：
 
-- [shared/utils/map-tools/](../../shared/utils/map-tools/) —— 22 个工具的契约（`camera` / `annotation` / `visualization` / `compute` / `tianditu` / `draw` 六个域文件 + `index.ts` 汇总 `MAP_TOOLS`）
-- [shared/utils/workspace.ts](../../shared/utils/workspace.ts) —— `Workspace` 类型与 `WORKSPACES` 常量
+- [shared/utils/tools/map/](../../shared/utils/tools/map/) —— 22 个工具的契约（`camera` / `annotation` / `visualization` / `compute` / `tianditu` / `draw` 六个域文件 + `index.ts` 汇总 `MAP_TOOLS`）
+- [shared/utils/tools/types.ts](../../shared/utils/tools/types.ts) —— `ToolContract`（不含 `workspaces`，`output` 可选）
+- [shared/utils/tools/index.ts](../../shared/utils/tools/index.ts) —— `TOOLS` / `getTool` / `getToolOutputSchema` / `ToolOutput<N>`，与工作区无关
+- [shared/utils/workspace.ts](../../shared/utils/workspace.ts) —— `Workspace` 类型与 `WORKSPACES` 常量（`global` / `map` / `form` / `data`）
 
 服务端：
 
 - [server/utils/mcp/mcp-tool.ts](../../server/utils/mcp/mcp-tool.ts) —— `mcpToolFrom(name)`，契约 → `defineMcpTool` 描述性字段
-- [server/utils/mcp/tools.ts](../../server/utils/mcp/tools.ts) —— mcp-toolkit → AI SDK 桥接，按契约的 `workspaces` 过滤
+- [server/utils/mcp/tools.ts](../../server/utils/mcp/tools.ts) —— mcp-toolkit → AI SDK 桥接，按 `_meta.group`（= 子目录名 = 工作区）过滤；读取要写成 `def.group ?? def._meta?.group`
 - [server/utils/mcp/tianditu.ts](../../server/utils/mcp/tianditu.ts) —— `useTianditu()` 客户端单例 + `toPoiResults()`
 - [server/utils/chat-prompts.ts](../../server/utils/chat-prompts.ts) —— `copilotSystemPrompt` / `WORKSPACE_BRIEF.map`
+- [server/utils/workspace-context.ts](../../server/utils/workspace-context.ts) —— 按工作区 zod 校验并分发客户端上下文快照
 - [server/utils/drawn-features.ts](../../server/utils/drawn-features.ts) —— `summarizeDrawnFeatures()`，手绘要素 → system prompt 摘要
-- [server/mcp/tools/](../../server/mcp/tools/) —— 22 个 handler，每个文件只剩它独有的计算
+- [server/mcp/tools/map/](../../server/mcp/tools/map/) —— 22 个 handler，每个文件只剩它独有的计算；`form/` 是另外 7 个
 - [server/mcp/index.ts](../../server/mcp/index.ts) —— `/mcp` 鉴权中间件
 - [server/api/chats/[id].post.ts](../../server/api/chats/%5Bid%5D.post.ts) —— 接入 `getToolsForWorkspace(chat.workspace)`
 
 客户端：
 
-- [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts) —— 工具 → 「对地图做什么」（`reduce` / `effect` / `replayOnLoad`），`HANDLED` 由此派生
-- [app/composables/useMapToolDispatch.ts](../../app/composables/useMapToolDispatch.ts) —— 派发器（消息纯归约 + 副作用 fire-once + `seen` 单变量水合 / 重置 + 错误输出守卫）
+- [app/utils/tool-applicators.ts](../../app/utils/tool-applicators.ts) —— `ToolApplicator<TState, TCtx>` 与 `createDefine()`
+- [app/utils/map-tool-applicators.ts](../../app/utils/map-tool-applicators.ts) —— 工具 → 「对地图做什么」（`reduce` / `effect` / `replayOnLoad`），派发器的 `handled` 由此派生
+- [app/composables/useToolDispatch.ts](../../app/composables/useToolDispatch.ts) —— 泛型派发器（消息纯归约 + 副作用 fire-once + `seen` 单变量水合 / 重置 + 错误输出守卫）
+- [app/composables/useMapToolDispatch.ts](../../app/composables/useMapToolDispatch.ts) —— map 的薄封装，注入地图状态与相机 / 导出 / 绘制实例
 - [app/composables/useMapWorkspace.ts](../../app/composables/useMapWorkspace.ts) —— 单个 `useState` 承载全部地图状态
+- [app/composables/useWorkspaceContext.ts](../../app/composables/useWorkspaceContext.ts) —— 按工作区产出上传给服务端的上下文快照（手绘要素从这里走）
 - [app/composables/useDrawnFeatures.ts](../../app/composables/useDrawnFeatures.ts) —— 手绘要素独立 `useState`（刻意不进纯归约状态，见 8.2）+ `usePendingDrawColor()` 挂起颜色
 - [app/pages/workspace/map.vue](../../app/pages/workspace/map.vue) —— `map-id` + 声明式渲染 + `<MapboxDrawControl>`（`drawThemeStyles` + `@create` 落色）
 - [app/components/CopilotPanel.vue](../../app/components/CopilotPanel.vue) —— 调用 `useMapToolDispatch` 的作用域
-- [app/components/chat/message/MessageContent.vue](../../app/components/chat/message/MessageContent.vue) —— 工具状态文案（读契约的 `status`）
+- [app/components/chat/message/MessageContent.vue](../../app/components/chat/message/MessageContent.vue) —— 工具气泡的状态文案与图标（读契约的 `status` / `icon`）
 - [app/utils/quick-chats.ts](../../app/utils/quick-chats.ts) —— Copilot 侧栏快捷提示，写成带动机的真实场景（常触发多工具串联），整体仍覆盖全部工具与关键参数路径
 
 `@movk/mapbox` 包（源码在 `/Users/yixuanmiao/Projects/movk-mapbox`）：
@@ -376,7 +394,7 @@ export default defineMcpTool({
 
 1. **`map.vue` 挂控件**：`<MapboxDrawControl v-model:features :options="DRAW_OPTIONS">` 放进已有的 `map-id="workspace-map"` 地图内，并**包一层 `<ClientOnly>`**（否则 SSR 期就注册进进程级绘制注册表，逐请求泄漏，见 7.7）。控件按钮常驻显示——用户点按钮画和 AI 调 `draw-shape` 切模式共用同一个 draw 实例，模式切换后按钮自动同步高亮。
 2. **手绘要素不进纯归约状态**。这是本次接入唯一的架构陷阱：`MapWorkspaceState` 是「当前消息的纯归约」（见 4.4 与 7.4），每次消息变化整体重算。用户手绘的要素是**交互产物、不是任何工具输出的函数**，塞进去会在下一条消息到达时被重算清空。故由 `v-model:features` 绑 [useDrawnFeatures.ts](../../app/composables/useDrawnFeatures.ts) 这个**独立 `useState`**，与工具归约状态并列而非嵌套。两条有意为之的后果：不落库（刷新即丢，手绘是画布不是会话产物）、不随 `chatId` 重置（切换会话时用户画的东西保留）。切走 map 工作区时控件卸载，但 useState 里的数组还在，切回来时包的 `onMounted` 有 `instance.set(...)` 回填逻辑，studio 侧无需处理。
-3. **契约与 handler**：`draw-shape({ shape, color? })` 与 `clear-drawing()`，handler 均为 echo（真正的副作用在客户端）。契约独立成第六个域文件 [draw.ts](../../shared/utils/map-tools/draw.ts)。
+3. **契约与 handler**：`draw-shape({ shape, color? })` 与 `clear-drawing()`，handler 均为 echo（真正的副作用在客户端）。契约独立成第六个域文件 [draw.ts](../../shared/utils/tools/map/draw.ts)。
 4. **applicator 只写 `effect`、不写 `reduce`、不 `replayOnLoad`**：`draw-shape` 调 `changeMode`，`clear-drawing` 调 `deleteAll()`。`mapbox-gl-draw` 画完一个要素会自动退回 `simple_select`，不需要包侧或 studio 侧额外处理。不 `replayOnLoad` 是因为刷新页面不该让地图重新进入绘制态，也不该重放一次清除。
 5. **prompt 补一条选型规则**：已知几何走 `add-geojson`，只有「让我手动画」这类交互式请求才用 `draw-*`；清手绘用 `clear-drawing`，清工具添加的标注用 `remove-marker`，两者不可混用。
 
@@ -400,7 +418,9 @@ export default defineMcpTool({
 
 #### 手绘要素 → LLM 的上下文注入链路
 
-`CopilotPanel` 的 `prepareSendMessagesRequest` 在 `workspace === 'map'` 且手绘非空时把快照塞进 body（`DefaultChatTransport` 只构造一次，回调闭包读 ref，每次发送拿到的都是当前值）→ `[id].post.ts` 校验后交给 `summarizeDrawnFeatures()` → 拼进 `copilotSystemPrompt(workspace, drawnBrief)`。
+`CopilotPanel` 的 `prepareSendMessagesRequest` 把 [useWorkspaceContext](../../app/composables/useWorkspaceContext.ts) 的快照塞进 body 的 `workspaceContext`（`DefaultChatTransport` 只构造一次，回调闭包读 ref，每次发送拿到的都是当前值）→ `[id].post.ts` 交给 [summarizeWorkspaceContext](../../server/utils/workspace-context.ts)，它按工作区做 zod 边界校验后分发给 `summarizeDrawnFeatures()` → 拼进 `copilotSystemPrompt(workspace, contextBrief)`。
+
+> 这里原本是 `CopilotPanel` 里一处硬编码的 `workspace === 'map' && drawnFeatures.length` 分支。落地 form 工作区时（form 也要注入当前表单结构与已填值）收敛成了单一通道——否则每加一个工作区就要在请求体里堆一个 `if`。
 
 摘要规则：圆 / 椭圆 / 扇形描述其参数；其余几何顶点数 ≤ 30 时给完整坐标（精度 6 位），超出只给顶点数与包围盒。于是 LLM 拿到线的坐标可直接调 `measure-distance`，拿到多边形坐标可调 `add-geojson` 转成正式图层，拿到圆的 `radiusInM` 直接口述——闭环成立，且没有一个大几何穿过 tool-call JSON。
 
@@ -413,4 +433,4 @@ system prompt 不落库，所以 LLM 每轮看到的都是**当前**手绘快照
 
 ### 8.3 包侧发布流程
 
-包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（契约加一条 + 新增 `server/mcp/tools/*.ts` + applicator 加一条）。发版前包侧改动可先用 pkg.pr.new 的预览构建（`package.json` 指向 `https://pkg.pr.new/@movk/mapbox@<commit>`）在 studio 里跑通，定版后再切回版本号——绘制这轮即如此，现已发布 1.2.0 并切回 `^1.2.0`。`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 需同步登记新版本（当前是 `@movk/mapbox@1.2.0`），否则新发的包会被发布时长阈值挡住。
+包内实现 → `playgrounds/play` 验证 → `pnpm build` → bump version → `pnpm release`（`before:init` 跑 lint+typecheck+test）+ `npm publish` → studio 侧 `pnpm up @movk/mapbox` 后接入对应工具（契约加一条 + 新增 `server/mcp/tools/map/*.ts` + applicator 加一条）。发版前包侧改动可先用 pkg.pr.new 的预览构建（`package.json` 指向 `https://pkg.pr.new/@movk/mapbox@<commit>`）在 studio 里跑通，定版后再切回版本号——绘制这轮即如此，现已发布 1.2.0 并切回 `^1.2.0`。`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 需同步登记新版本（当前是 `@movk/mapbox@1.2.0`），否则新发的包会被发布时长阈值挡住。

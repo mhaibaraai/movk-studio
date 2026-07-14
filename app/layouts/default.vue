@@ -225,8 +225,8 @@ defineShortcuts({
       }, ...groups]"
     />
 
-    <div class="flex-1 flex">
-      <div class="flex-1 flex flex-col">
+    <div class="flex-1 flex min-w-0">
+      <div class="flex-1 flex flex-col min-w-0">
         <div class="h-(--ui-header-height) shrink-0 flex items-center gap-2 px-4 border-b border-default">
           <UNavigationMenu :items="workspaceNavs" variant="link" class="flex-1 min-w-0 justify-center" />
 

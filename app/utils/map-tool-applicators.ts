@@ -1,7 +1,6 @@
 import type { GeoJSON } from 'geojson'
 import { omitUndefined } from '@movk/core'
-import type { MapToolName, MapToolOutput } from '#shared/utils/map-tools'
-import { getMapTool } from '#shared/utils/map-tools'
+import type { ToolName, ToolOutput } from '#shared/utils/tools'
 
 // 派发上下文：相机、导出与绘制的组合式实例（在 setup 阶段构造后注入）
 export interface MapEffectContext {
@@ -11,39 +10,17 @@ export interface MapEffectContext {
   drawColor: ReturnType<typeof usePendingDrawColor>
 }
 
-/**
- * 一个工具「对地图做什么」。reduce 与 effect 可并存：落图的同时把相机移到结果范围。
- * 输出 schema 不在这里——它属于契约（shared/utils/map-tools），此处只写行为。
- */
-export interface MapToolApplicator {
-  /** 状态：归约进草稿。整段状态由消息重放重建，故必须幂等 */
-  reduce?: (draft: MapWorkspaceState, output: never) => void
-  /** 副作用：仅对新出现的 toolCallId 触发一次 */
-  effect?: (ctx: MapEffectContext, output: never, animate: boolean) => void
-  /** 会话首屏批量落位时是否重放：相机应落位，导出这类一次性动作不应重放 */
-  replayOnLoad?: boolean
-}
+type MapApplicator = ToolApplicator<MapWorkspaceState, MapEffectContext>
+type MapApplicatorSpec<N extends ToolName> = ApplicatorSpec<N, MapWorkspaceState, MapEffectContext>
 
-interface ApplicatorSpec<N extends MapToolName> {
-  reduce?: (draft: MapWorkspaceState, output: MapToolOutput<N>) => void
-  effect?: (ctx: MapEffectContext, output: MapToolOutput<N>, animate: boolean) => void
-  replayOnLoad?: boolean
-}
-
-// 从契约推导 output 类型，消除 as 强转；顺带守住「有 applicator 就必须有 output schema」的不变量
-function define<N extends MapToolName>(name: N, spec: ApplicatorSpec<N>): MapToolApplicator {
-  if (!getMapTool(name)?.output) {
-    throw new Error(`工具 ${name} 有客户端 applicator，但契约未声明 output schema`)
-  }
-  return spec as MapToolApplicator
-}
+const define = createDefine<MapWorkspaceState, MapEffectContext>()
 
 // 自动落位的统一留白；限制最大缩放，避免单点结果的退化包围盒把相机贴地放大
 const FIT_OPTIONS = { padding: 60, maxZoom: 15 }
 
 // 契约的 shape → mapbox-gl-draw 模式名。取值必须全部落在 map.vue 注册的 DRAW_OPTIONS.modes 内，
 // rectangle / circle 来自 @movk/mapbox 的 movkDrawModes，非 mapbox-gl-draw 内置模式
-const DRAW_MODE: Record<MapToolOutput<'draw-shape'>['shape'], string> = {
+const DRAW_MODE: Record<ToolOutput<'draw-shape'>['shape'], string> = {
   point: 'draw_point',
   line: 'draw_line_string',
   polygon: 'draw_polygon',
@@ -56,7 +33,7 @@ function fitTo(ctx: MapEffectContext, target: GeoJSON, animate: boolean) {
 }
 
 // search-poi 与 search-poi-in-area 输出同构，共用同一份落图 + 自动框选行为
-const poiApplicator: ApplicatorSpec<'search-poi'> = {
+const poiApplicator: MapApplicatorSpec<'search-poi'> = {
   // 赋值替换而非累加：每次搜索是「当前展示」，不跨轮次累积历史结果
   reduce: (draft, o) => {
     draft.pois = o.results
@@ -68,8 +45,8 @@ const poiApplicator: ApplicatorSpec<'search-poi'> = {
   replayOnLoad: true
 }
 
-// 工具名 → 客户端应用逻辑；分发器的 HANDLED 集合由此表派生
-export const MAP_TOOL_APPLICATORS: Record<string, MapToolApplicator> = {
+// 工具名 → 「对地图做什么」；派发器的 handled 集合由此表派生
+export const MAP_TOOL_APPLICATORS: Record<string, MapApplicator> = {
   'fly-to': define('fly-to', {
     // omitUndefined 剔除未提供的相机键：mapbox 以 `key in options` 判定字段是否指定，
     // 值为 undefined 时仍参与插值会得 NaN，污染 transform 矩阵（failed to invert matrix）。

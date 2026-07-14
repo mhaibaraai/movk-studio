@@ -6,5 +6,9 @@ allowBuilds:
   unrs-resolver: false
   vue-demi: false
 
+overrides:
+  vue-tsc: 3.3.5
+
 minimumReleaseAgeExclude:
   - '@movk/mapbox@1.2.0'
+  - '@nuxtjs/mcp-toolkit@0.18.0'

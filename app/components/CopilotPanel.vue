@@ -31,9 +31,9 @@ const ui = {
   }
 }
 
-const drawnFeatures = useDrawnFeatures()
+const workspaceContext = useWorkspaceContext(workspace)
 
-// transport 只构造一次，回调闭包读取 ref，每次发送带上当前手绘快照供服务端拼进 system prompt
+// transport 只构造一次，回调闭包读取 ref，每次发送带上当前工作区快照供服务端拼进 system prompt
 const transport = new DefaultChatTransport<UIMessage>({
   prepareSendMessagesRequest: ({ messages }) => ({
     api: `/api/chats/${chatId.value}`,
@@ -41,9 +41,7 @@ const transport = new DefaultChatTransport<UIMessage>({
     body: {
       messages,
       model: model.value,
-      ...(workspace.value === 'map' && drawnFeatures.value.length
-        ? { drawnFeatures: drawnFeatures.value }
-        : {})
+      ...(workspaceContext.value ? { workspaceContext: workspaceContext.value } : {})
     }
   })
 })
@@ -108,8 +106,10 @@ watch(history, (h) => {
   }
 }, { immediate: true })
 
-// map 工作区工具输出 → 驱动地图（CopilotPanel 常驻，composable 内部按 workspace 守卫）
+// 工具输出 → 驱动各工作区画布（CopilotPanel 常驻，派发器内部按 workspace 守卫）
 useMapToolDispatch(messages, workspace, chatId)
+useFormToolDispatch(messages, workspace, chatId)
+useTableToolDispatch(messages, workspace, chatId)
 
 function getVote(messageId: string): boolean | null {
   const found = votes.value.find(v => v.messageId === messageId)

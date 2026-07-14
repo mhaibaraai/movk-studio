@@ -2,7 +2,7 @@
 import type { UIMessage } from 'ai'
 import { getToolName, isReasoningUIPart, isTextUIPart, isToolUIPart } from 'ai'
 import { isPartStreaming, isToolStreaming } from '@nuxt/ui/utils/ai'
-import { getMapTool } from '#shared/utils/map-tools'
+import { getTool } from '#shared/utils/tools'
 
 defineProps<{
   message: UIMessage
@@ -15,15 +15,15 @@ const emit = defineEmits<{
 }>()
 
 // 工具调用状态文案取自契约的 status: [进行中, 已完成]
-function mapToolStatusText(part: Parameters<typeof getToolName>[0]): string {
+function toolStatusText(part: Parameters<typeof getToolName>[0]): string {
   const name = getToolName(part)
-  const status = getMapTool(name)?.status
+  const status = getTool(name)?.status
   if (!status) return name
   return part.state === 'output-available' ? status[1] : status[0]
 }
 
-function mapToolIcon(part: Parameters<typeof getToolName>[0]): string | undefined {
-  return getMapTool(getToolName(part))?.icon
+function toolIcon(part: Parameters<typeof getToolName>[0]): string | undefined {
+  return getTool(getToolName(part))?.icon
 }
 </script>
 
@@ -41,9 +41,9 @@ function mapToolIcon(part: Parameters<typeof getToolName>[0]): string | undefine
 
     <UChatTool
       v-else-if="isToolUIPart(part)"
-      :text="mapToolStatusText(part)"
+      :text="toolStatusText(part)"
       :streaming="isToolStreaming(part)"
-      :icon="mapToolIcon(part)"
+      :icon="toolIcon(part)"
       chevron="trailing"
     />
 
