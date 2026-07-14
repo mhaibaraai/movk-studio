@@ -1,5 +1,6 @@
 import type { FieldCondition, FormField, FormGroup, FormSchema } from '#shared/utils/form-schema'
-import { CONDITION_OPS, activeRules, walkForm } from '#shared/utils/form-semantics'
+import { activeRules, walkForm } from '#shared/utils/form-semantics'
+import { CONDITION_OPS } from '#shared/utils/condition-semantics'
 
 /** 单个已填值的字符串上限，避免长文本备注挤占 prompt */
 const MAX_VALUE_LENGTH = 60

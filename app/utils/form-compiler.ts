@@ -2,7 +2,8 @@ import type { z } from 'zod'
 import { z as zod } from 'zod'
 import { FormGroup as FormGroupComponent } from '#components'
 import type { FormField, FormSchema } from '#shared/utils/form-schema'
-import { FIELD_SPEC, activeRules, evalCondition, fieldControlProps, walkForm } from '#shared/utils/form-semantics'
+import { FIELD_SPEC, activeRules, fieldControlProps, walkForm } from '#shared/utils/form-semantics'
+import { evalCondition } from '#shared/utils/condition-semantics'
 
 type Afz = ReturnType<typeof useAutoForm>['afz']
 

@@ -1,5 +1,7 @@
 import type { FieldCondition, FormField, FormGroup, FormSchema } from '#shared/utils/form-schema'
-import { COLUMN_CLASS, CONDITION_OPS, FIELD_SPEC, activeRules, fieldControlProps, walkForm } from '#shared/utils/form-semantics'
+import { COLUMN_CLASS, FIELD_SPEC, activeRules, fieldControlProps, walkForm } from '#shared/utils/form-semantics'
+import { CONDITION_OPS } from '#shared/utils/condition-semantics'
+import { printAccess, printCodeKey, printCodeValue, rawCode } from './codegen'
 
 /**
  * FormSchema → 可直接粘回项目的 Vue 单文件组件（afz 写法）。
@@ -12,58 +14,11 @@ import { COLUMN_CLASS, CONDITION_OPS, FIELD_SPEC, activeRules, fieldControlProps
  * 校验链在 .meta() 之前：getAutoFormMetadata 沿 _zod.parent 回溯合并，两段 meta 最终并成一份。
  */
 
-/** 标记一段原样输出的代码（如条件表达式），区别于需要字面量化的数据 */
-interface RawCode {
-  __raw: string
-}
-
-function raw(code: string): RawCode {
-  return { __raw: code }
-}
-
-function isRaw(value: unknown): value is RawCode {
-  return typeof value === 'object' && value !== null && '__raw' in value
-}
-
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
-
 /** 生成的 if 回调的入参类型名；有条件字段时在文件头声明 */
 const CTX_TYPE = 'FieldCtx'
 
-function printKey(key: string): string {
-  return IDENTIFIER.test(key) ? key : JSON.stringify(key)
-}
-
-function printValue(value: unknown, indent: string): string {
-  if (isRaw(value)) return value.__raw
-  if (value === null) return 'null'
-  if (typeof value === 'string') return JSON.stringify(value)
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-
-  if (Array.isArray(value)) {
-    if (!value.length) return '[]'
-    const inner = `${indent}  `
-    const items = value.map(item => `${inner}${printValue(item, inner)}`)
-    return `[\n${items.join(',\n')}\n${indent}]`
-  }
-
-  if (typeof value === 'object') {
-    const entries = Object.entries(value).filter(([, item]) => item !== undefined)
-    if (!entries.length) return '{}'
-    const inner = `${indent}  `
-    const props = entries.map(([key, item]) => `${inner}${printKey(key)}: ${printValue(item, inner)}`)
-    return `{\n${props.join(',\n')}\n${indent}}`
-  }
-
-  return 'undefined'
-}
-
 function printCondition(condition: FieldCondition): string {
-  const path = IDENTIFIER.test(condition.field)
-    ? `ctx.state.${condition.field}`
-    : `ctx.state[${JSON.stringify(condition.field)}]`
-
-  return `(ctx: ${CTX_TYPE}) => ${CONDITION_OPS[condition.op].code(path, condition.value)}`
+  return `(ctx: ${CTX_TYPE}) => ${CONDITION_OPS[condition.op].code(printAccess('ctx.state', condition.field), condition.value)}`
 }
 
 /** afz 工厂入参：只放 AutoFormControlsMeta 认的键 */
@@ -82,7 +37,7 @@ function fieldMeta(field: FormField): Record<string, unknown> {
   return {
     label: field.label,
     ...(field.description ? { description: field.description } : {}),
-    ...(field.condition ? { if: raw(printCondition(field.condition)) } : {})
+    ...(field.condition ? { if: rawCode(printCondition(field.condition)) } : {})
   }
 }
 
@@ -92,19 +47,19 @@ function printField(field: FormField, indent: string): string {
   const inner = `${indent}  `
 
   const factoryArgs = factory === 'enum'
-    ? `${printValue((field.options ?? []).map(option => option.value), indent)}${Object.keys(meta).length ? `, ${printValue(meta, indent)}` : ''}`
+    ? `${printCodeValue((field.options ?? []).map(option => option.value), indent)}${Object.keys(meta).length ? `, ${printCodeValue(meta, indent)}` : ''}`
     : factory === 'array'
-      ? `z.string()${Object.keys(meta).length ? `, ${printValue(meta, indent)}` : ''}`
+      ? `z.string()${Object.keys(meta).length ? `, ${printCodeValue(meta, indent)}` : ''}`
       : Object.keys(meta).length
-        ? printValue(meta, indent)
+        ? printCodeValue(meta, indent)
         : ''
 
   const tail: string[] = [
     ...activeRules(field.type, field.validation).map(rule => rule.code),
-    `.meta(${printValue(fieldMeta(field), indent)})`
+    `.meta(${printCodeValue(fieldMeta(field), indent)})`
   ]
 
-  if (field.defaultValue !== undefined) tail.push(`.default(${printValue(field.defaultValue, indent)})`)
+  if (field.defaultValue !== undefined) tail.push(`.default(${printCodeValue(field.defaultValue, indent)})`)
   if (field.validation?.required === false) tail.push('.optional()')
 
   return `afz.${factory}(${factoryArgs})\n${tail.map(call => `${inner}${call}`).join('\n')}`
@@ -112,7 +67,7 @@ function printField(field: FormField, indent: string): string {
 
 function printFields(fields: FormField[], indent: string): string {
   return fields
-    .map(field => `${indent}${printKey(field.name)}: ${printField(field, indent)}`)
+    .map(field => `${indent}${printCodeKey(field.name)}: ${printField(field, indent)}`)
     .join(',\n')
 }
 
@@ -125,7 +80,7 @@ function printGroup(group: FormGroup, fields: FormField[], indent: string): stri
     ? `${indent}// 分组「${group.title}」${group.collapsible ? '（原为可折叠；折叠与标题需自备容器组件，经 afz.layout 的 component 传入）' : ''}\n`
     : ''
 
-  return `${header}${indent}${printKey(`${group.id}Layout`)}: afz.layout({
+  return `${header}${indent}${printCodeKey(`${group.id}Layout`)}: afz.layout({
 ${inner}class: ${JSON.stringify(layoutClass)},
 ${inner}fields: {
 ${printFields(fields, body)}
@@ -139,7 +94,7 @@ function printSchemaBody(schema: FormSchema): string {
 
   return walkForm(schema)
     .map(node => (node.kind === 'field'
-      ? `${indent}${printKey(node.field.name)}: ${printField(node.field, indent)}`
+      ? `${indent}${printCodeKey(node.field.name)}: ${printField(node.field, indent)}`
       : printGroup(node.group, node.fields, indent)))
     .join(',\n')
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolContract } from '../types'
-import { conditionSchema, fieldSchema, optionSchema, validationSchema } from '../../form-schema'
+import { fieldSchema, optionSchema, validationSchema } from '../../form-schema'
+import { conditionSchema } from '../../condition'
 
 const upsertField = fieldSchema.partial().extend({
   name: z.string().describe('字段 name，表单内唯一。已存在则修改该字段，不存在则新增；新增时必须同时传 type 与 label'),

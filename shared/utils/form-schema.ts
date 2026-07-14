@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { conditionSchema } from './condition'
 
 /**
  * form 工作区的画布状态：可序列化的表单结构，对应 map 的 MapWorkspaceState。
@@ -33,10 +34,6 @@ export const FIELD_TYPES = [
 
 export type FieldType = typeof FIELD_TYPES[number]
 
-export const CONDITION_OP_NAMES = ['eq', 'ne', 'in', 'notIn', 'gt', 'lt', 'truthy', 'falsy'] as const
-
-export type ConditionOp = typeof CONDITION_OP_NAMES[number]
-
 export const optionSchema = z.object({
   label: z.string().describe('展示给用户的文案'),
   value: z.string().describe('存入表单数据的值')
@@ -49,18 +46,6 @@ export const validationSchema = z.object({
   pattern: z.string().max(200).optional().describe('正则源串，不带两侧斜杠，如 ^1[3-9]\\d{9}$'),
   patternMessage: z.string().optional().describe('正则不匹配时展示的提示文案'),
   integer: z.boolean().optional().describe('数值必须为整数')
-})
-
-/** 声明式求值——绝不接受表达式字符串、绝不 eval（八个算子的语义见 form-semantics 的 CONDITION_OPS） */
-export const conditionSchema = z.object({
-  field: z.string().describe('被依赖字段的 name'),
-  op: z.enum(CONDITION_OP_NAMES).describe('比较方式：eq 等于、ne 不等于、in 在集合内、notIn 不在集合内、gt 大于、lt 小于、truthy 有值、falsy 无值'),
-  value: z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.array(z.union([z.string(), z.number()]))
-  ]).optional().describe('比较值；op 为 truthy / falsy 时不需要，in / notIn 时传数组')
 })
 
 export const fieldSchema = z.object({
