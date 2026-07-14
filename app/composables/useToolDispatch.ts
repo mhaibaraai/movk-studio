@@ -2,7 +2,7 @@ import type { Ref } from 'vue'
 import type { UIMessage } from 'ai'
 import { getToolName, isToolUIPart } from 'ai'
 import type { Workspace } from '#shared/utils/workspace'
-import { getTool } from '#shared/utils/tools'
+import { getToolOutputSchema } from '#shared/utils/tools'
 
 interface DispatchItem {
   id: string
@@ -36,7 +36,7 @@ export interface ToolDispatchOptions<TState, TCtx> {
 function parseOutput(name: string, output: unknown): unknown | null {
   if (output && typeof output === 'object' && 'error' in output) return null
 
-  const result = getTool(name)?.output?.safeParse(output)
+  const result = getToolOutputSchema(name)?.safeParse(output)
   return result?.success ? result.data : null
 }
 

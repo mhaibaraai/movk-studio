@@ -1,4 +1,4 @@
 export default defineMcpTool({
-  ...mcpToolFrom('set-field-validation'),
+  ...mcpToolFrom('upsert-field'),
   handler: input => input
 })

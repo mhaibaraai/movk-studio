@@ -11,6 +11,17 @@ const { $prettier } = useNuxtApp()
 const compiled = computed(() => compileFormSchema(schema.value, afz))
 const isEmpty = computed(() => schema.value.fields.length === 0)
 
+// 字段被删除或改名后，values 里的陈旧键既会随 :state 传给表单，也会随 workspaceContext 回灌给模型，
+// 让它看到已不存在字段的值。只裁剪不清空——清空表单与切换会话时保留已填值是刻意设计。
+watch(() => schema.value.fields.map(field => field.name).join(','), () => {
+  const names = new Set(schema.value.fields.map(field => field.name))
+  const kept = Object.entries(values.value).filter(([key]) => names.has(key))
+
+  if (kept.length !== Object.keys(values.value).length) {
+    values.value = Object.fromEntries(kept)
+  }
+})
+
 const source = computed(() => generateFormCode(schema.value))
 
 // server: false —— 画布整体在 ClientOnly 内，服务端格式化一份用不上的空表单代码纯属浪费。
@@ -43,9 +54,7 @@ function onSubmit(event: FormSubmitEvent<Record<string, unknown>>) {
 
 <template>
   <div class="flex-1 min-h-0 flex flex-col">
-    <!-- 表单结构是「当前消息的纯归约」，而派发器是客户端独占的：SSR 期状态恒为空，
-         但页面 hydrate 时 CopilotPanel 的派发器已把状态算好，两侧渲染的分支必然不同。
-         这块画布本就是客户端投影，明确声明比让 hydration 去对齐更诚实 -->
+    <!-- 派发器客户端独占，SSR 期状态恒为空而客户端 hydrate 时已算好，两侧渲染的分支必然不同 -->
     <ClientOnly>
       <template #fallback>
         <div class="flex-1 flex items-center justify-center p-6">
@@ -85,23 +94,12 @@ function onSubmit(event: FormSubmitEvent<Record<string, unknown>>) {
 
         <div class="flex-1 min-h-0 overflow-y-auto">
           <div class="mx-auto max-w-3xl flex flex-col gap-6 p-6">
-            <template v-if="tab === 'preview'">
-              <div class="flex flex-col gap-1">
-                <h1 class="text-xl font-semibold text-highlighted">
-                  {{ schema.title || '未命名表单' }}
-                </h1>
-                <p v-if="schema.description" class="text-sm text-muted">
-                  {{ schema.description }}
-                </p>
-              </div>
-
-              <MAutoForm
-                :schema="compiled"
-                :state="values"
-                :submit-button-props="{ label: schema.submitText || '提交' }"
-                @submit="onSubmit"
-              />
-            </template>
+            <MAutoForm
+              v-if="tab === 'preview'"
+              :schema="compiled"
+              :state="values"
+              @submit="onSubmit"
+            />
 
             <ChatComark v-else :markdown="codeMarkdown" />
           </div>

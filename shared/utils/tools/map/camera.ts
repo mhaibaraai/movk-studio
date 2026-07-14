@@ -20,7 +20,6 @@ const fitBounds = {
 
 export const CAMERA_TOOLS = {
   'fly-to': {
-    workspaces: ['map'],
     description: '将地图相机飞行定位到指定 WGS84 经纬度，可选设置缩放级别、俯仰角（3D 倾斜视角）、方位角与动画时长。用于「飞到 / 定位到 / 看看某地」等请求。',
     input: flyTo,
     output: z.object(flyTo),
@@ -29,7 +28,6 @@ export const CAMERA_TOOLS = {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   },
   'fit-bounds': {
-    workspaces: ['map'],
     description: '将地图缩放到一个矩形地理范围，用于同时展示多个地点或一个区域。传入范围的西南角与东北角 WGS84 经纬度。',
     input: fitBounds,
     output: z.object(fitBounds),

@@ -39,7 +39,6 @@ const addCluster = {
 
 export const VISUALIZATION_TOOLS = {
   'toggle-3d-buildings': {
-    workspaces: ['map'],
     description: '开启或关闭 3D 建筑（建筑轮廓按真实层高立体拉伸）。用于「显示 3D 建筑 / 看看这里的楼 / 关闭立体建筑」等请求。仅在缩放级别不低于 minZoom（缺省 15）时可见。',
     input: toggle3dBuildings,
     output: z.object(toggle3dBuildings),
@@ -48,7 +47,6 @@ export const VISUALIZATION_TOOLS = {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   },
   'set-terrain': {
-    workspaces: ['map'],
     description: '开启或关闭三维地形（按真实高程起伏渲染地表），可调节夸张系数放大高差。用于「显示地形 / 看看山势起伏 / 关闭地形」等请求。',
     input: setTerrain,
     output: z.object({ enabled: z.boolean(), exaggeration: z.number() }),
@@ -57,7 +55,6 @@ export const VISUALIZATION_TOOLS = {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   },
   'add-heatmap': {
-    workspaces: ['map'],
     description: '把一组加权点渲染成热力图，用于展示数量、密度或强度的空间分布（人口、销量、事件频次等）。点集由你直接给出，每个点必须带权重值。再次调用会替换上一张热力图，而不是叠加。',
     input: addHeatmap,
     output: z.object({
@@ -71,7 +68,6 @@ export const VISUALIZATION_TOOLS = {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   },
   'add-cluster': {
-    workspaces: ['map'],
     description: '把一组点渲染成聚合图层：邻近的点自动合并为带数量的聚合圆，放大后展开为散点。用于点位较多、直接标注会互相遮挡的场景。再次调用会替换上一个聚合图层，而不是叠加。',
     input: addCluster,
     output: z.object({ ...addCluster, label, clusterId: z.string() }),

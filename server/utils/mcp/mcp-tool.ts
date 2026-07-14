@@ -1,11 +1,12 @@
-import type { ToolAnnotations, ToolName } from '#shared/utils/tools'
+import type { ToolName } from '#shared/utils/tools'
 import { TOOLS } from '#shared/utils/tools'
+import type { McpToolAnnotations } from '@nuxtjs/mcp-toolkit/server'
 
 interface McpToolFields<N extends ToolName> {
   name: N
   description: string
   inputSchema: (typeof TOOLS)[N]['input']
-  annotations: ToolAnnotations | undefined
+  annotations: McpToolAnnotations | undefined
 }
 
 /**

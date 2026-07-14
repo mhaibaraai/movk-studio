@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { ToolContract } from '../types'
-import { groupSchema } from './shapes'
+import { groupSchema } from '../../form-schema'
 
 const setLayout = {
   groups: z.array(groupSchema).describe('完整的分组定义，整体替换原有分组；传空数组即取消所有分组'),
@@ -10,10 +10,8 @@ const setLayout = {
 
 export const FORM_LAYOUT_TOOLS = {
   'set-layout': {
-    workspaces: ['form'],
     description: '定义表单的分组与栅格布局，并指定哪些字段属于哪个分组。整体替换现有分组，所以要把希望保留的分组一并传上。用户说「按基本信息和联系方式分两块」「这几个字段并排放两列」「补充信息折叠起来」时使用。',
     input: setLayout,
-    output: z.object(setLayout),
     icon: 'i-lucide-layout-grid',
     status: ['正在调整布局…', '已调整布局'],
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }

@@ -1,10 +1,7 @@
 import type { FormSchema } from '#shared/utils/form-schema'
 import { createFormSchema } from '#shared/utils/form-schema'
 
-/**
- * 表单结构：派发器把「当前全部消息的工具输出」归约成完整结构后整体写入，
- * form.vue 编译成 ZodObject 后交给 <AutoForm> 渲染。只有 AI 工具能改。
- */
+/** 表单结构：消息的纯归约，只有 AI 工具能改 */
 export function useFormWorkspace() {
   return useState<FormSchema>('form-workspace', createFormSchema)
 }

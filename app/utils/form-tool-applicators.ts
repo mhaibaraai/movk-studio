@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import type { ToolOutput } from '#shared/utils/tools'
 import type { FormField, FormSchema } from '#shared/utils/form-schema'
 import { createFormSchema } from '#shared/utils/form-schema'
 
@@ -12,9 +13,26 @@ type FormApplicator = ToolApplicator<FormSchema, FormEffectContext>
 
 const define = createDefine<FormSchema, FormEffectContext>()
 
-/** 按 name 替换一个字段；整段状态由消息重放重建，故一律不可变更新 */
-function mapField(draft: FormSchema, name: string, update: (field: FormField) => FormField) {
-  draft.fields = draft.fields.map(field => (field.name === name ? update(field) : field))
+type FieldPatch = ToolOutput<'upsert-field'>
+
+/**
+ * 打补丁的三态约定：未传的键保持原样，传 null 的键清除（写成 undefined，与「没有这一项」等价），其余覆盖。
+ * 不能整体展开 patch——那会把未传的键一并写成 undefined，等同于误删。
+ */
+function patchField(field: FormField, patch: FieldPatch): FormField {
+  const next: Record<string, unknown> = { ...field }
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'afterField' || value === undefined) continue
+    next[key] = value === null ? undefined : value
+  }
+
+  return next as FormField
+}
+
+/** 新增字段：type 与 label 由契约要求 AI 传，漏传时兜底，不让画布因此崩掉 */
+function createField(patch: FieldPatch): FormField {
+  return patchField({ name: patch.name, type: 'text', label: patch.name }, patch)
 }
 
 function downloadText(fileName: string, content: string) {
@@ -29,11 +47,7 @@ function downloadText(fileName: string, content: string) {
 // 工具名 → 「对表单做什么」；派发器的 handled 集合由此表派生
 export const FORM_TOOL_APPLICATORS: Record<string, FormApplicator> = {
   'generate-form': define('generate-form', {
-    // 整表替换：新需求即新表单，不与旧表单合并
     reduce: (draft, o) => {
-      draft.title = o.title
-      draft.description = o.description
-      draft.submitText = o.submitText
       draft.groups = o.groups ?? []
       draft.fields = o.fields
     }
@@ -43,39 +57,22 @@ export const FORM_TOOL_APPLICATORS: Record<string, FormApplicator> = {
     reduce: draft => Object.assign(draft, createFormSchema())
   }),
 
-  'set-form-meta': define('set-form-meta', {
+  'upsert-field': define('upsert-field', {
+    // 同名即修改而非追加，故重放全部消息时不会累积出重复字段
     reduce: (draft, o) => {
-      if (o.title !== undefined) draft.title = o.title
-      if (o.description !== undefined) draft.description = o.description
-      if (o.submitText !== undefined) draft.submitText = o.submitText
-    }
-  }),
+      const index = draft.fields.findIndex(field => field.name === o.name)
 
-  'add-field': define('add-field', {
-    // 先剔同名再插入：同名视为替换，重放时不会累积出重复字段
-    reduce: (draft, o) => {
-      const others = draft.fields.filter(field => field.name !== o.field.name)
-      const at = o.afterField ? others.findIndex(field => field.name === o.afterField) : -1
+      if (index >= 0) {
+        draft.fields = draft.fields.map((field, at) => (at === index ? patchField(field, o) : field))
+        return
+      }
+
+      const at = o.afterField ? draft.fields.findIndex(field => field.name === o.afterField) : -1
+      const created = createField(o)
 
       draft.fields = at >= 0
-        ? [...others.slice(0, at + 1), o.field, ...others.slice(at + 1)]
-        : [...others, o.field]
-    }
-  }),
-
-  'update-field': define('update-field', {
-    // 逐字段判 undefined：未传的项保持原样，不能整体展开 o（会把未传的键写成 undefined）
-    reduce: (draft, o) => {
-      mapField(draft, o.name, field => ({
-        ...field,
-        ...(o.type !== undefined ? { type: o.type } : {}),
-        ...(o.label !== undefined ? { label: o.label } : {}),
-        ...(o.description !== undefined ? { description: o.description } : {}),
-        ...(o.placeholder !== undefined ? { placeholder: o.placeholder } : {}),
-        ...(o.group !== undefined ? { group: o.group } : {}),
-        ...(o.defaultValue !== undefined ? { defaultValue: o.defaultValue } : {}),
-        ...(o.controlProps !== undefined ? { controlProps: o.controlProps } : {})
-      }))
+        ? [...draft.fields.slice(0, at + 1), created, ...draft.fields.slice(at + 1)]
+        : [...draft.fields, created]
     }
   }),
 
@@ -103,14 +100,6 @@ export const FORM_TOOL_APPLICATORS: Record<string, FormApplicator> = {
     }
   }),
 
-  'set-field-validation': define('set-field-validation', {
-    reduce: (draft, o) => mapField(draft, o.name, field => ({ ...field, validation: o.validation }))
-  }),
-
-  'set-field-options': define('set-field-options', {
-    reduce: (draft, o) => mapField(draft, o.name, field => ({ ...field, options: o.options }))
-  }),
-
   'set-layout': define('set-layout', {
     // 分组整体替换；字段归属随之收敛——指向已删除分组的字段回到顶层，否则编译器会把它们当无分组处理却仍留着脏 group 值
     reduce: (draft, o) => {
@@ -124,10 +113,6 @@ export const FORM_TOOL_APPLICATORS: Record<string, FormApplicator> = {
         return { ...field, group: group && existing.has(group) ? group : undefined }
       })
     }
-  }),
-
-  'set-field-condition': define('set-field-condition', {
-    reduce: (draft, o) => mapField(draft, o.name, field => ({ ...field, condition: o.condition ?? undefined }))
   }),
 
   // 只写 effect 且不 replayOnLoad：刷新页面不该重复触发一次下载（同 map 的 export-image）

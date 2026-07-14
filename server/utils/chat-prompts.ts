@@ -36,25 +36,13 @@ const WORKSPACE_BRIEF: Record<Workspace, string> = {
 search-poi / search-poi-in-area / get-administrative-boundary / plan-route 会自动把结果画到地图上并缩放到结果范围，调用后不需要再调 fly-to 或 fit-bounds，直接向用户口述结论即可。
 
 开启 3D 建筑或地形后，若当前是俯视视角，追加一次 fly-to 把 pitch 设为 60 左右才能看出立体效果；3D 建筑还需要 zoom 不低于 16。热力图与聚合图的点集由你依据自身知识直接给出，热力图每个点必须带权重值（不加权时传 1）。`,
-  form: `当前在「表单」工作区，你可以调用以下工具直接构建右侧画布上的表单，而不是仅用文字描述该怎么做。画布上的表单是活的：用户可以真实填写、真实触发校验。
-- generate-form：一次性生成一份完整表单，整体替换画布上现有内容
-- clear-form：清空整个表单
-- set-form-meta：改表单标题、说明或提交按钮文案
-- add-field：追加或插入一个字段，可指定插入到某字段之后
-- update-field：改某个字段的类型、标签、说明、占位文案、所属分组或默认值
-- remove-field：移除一个字段
-- reorder-fields：按给定顺序重排字段
-- set-field-validation：设置字段的校验规则（必填、长度或数值范围、正则）
-- set-field-options：设置下拉 / 单选 / 胶囊字段的可选项
-- set-layout：定义分组与栅格列数，并指定字段归属
-- set-field-condition：让字段只在另一字段满足条件时才显示
-- export-form-code：把当前表单导出为 Vue 单文件组件并下载
+  form: `当前在「表单」工作区，你可以调用工具直接构建右侧画布上的表单，而不是仅用文字描述该怎么做。画布上的表单是活的：用户可以真实填写、真实触发校验。表单只有结构（字段、校验、布局），没有标题与说明文案。
 
 字段定位：每个字段有唯一的 name（英文小驼峰），它同时是表单数据的键。system prompt 里会给出当前表单的完整字段清单，增量修改时用 name 定位，不要凭记忆猜。
 
-工具选型：用户描述一个新表单需求时用 generate-form 一次建好，不要用一串 add-field 逐个拼。已有表单要局部调整时一律用增量工具（add-field / update-field / remove-field / set-field-* / set-layout），不要重新 generate-form——那会丢掉用户已有的内容。改校验用 set-field-validation，改选项用 set-field-options，改显示条件用 set-field-condition，这三者不要塞进 update-field。
+工具选型：用户描述一个新表单需求时用 generate-form 一次建好，不要用一串 upsert-field 逐个拼。已有表单要局部调整时一律用增量工具（upsert-field / remove-field / reorder-fields / set-layout），不要重新 generate-form——那会丢掉用户已有的内容。
 
-整体替换语义：set-field-validation、set-field-options、set-layout 都是整体替换而非合并。改动其中一项时，把希望保留的其余项一并传上（例如给性别加一个「其他」选项，要传完整的三个选项）。
+整体替换语义：upsert-field 的 validation / options / condition 与 set-layout 的 groups 都是整体替换而非合并。改动其中一项时，把希望保留的其余项一并传上（例如给性别加一个「其他」选项，要传完整的三个选项）。
 
 字段类型：优先选语义最贴切的类型而不是一律用 text——手机号用 phone、邮箱用 email、多行说明用 textarea、是非选择用 switch、少量互斥选项用 radio、较多选项用 select、评分用 rating、日期用 date。select / radio / pills 必须同时给 options。
 
