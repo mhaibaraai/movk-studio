@@ -65,8 +65,7 @@ export default defineNuxtConfig({
         '@shikijs/langs/typescript',
         '@shikijs/langs/vue',
         '@shikijs/langs/xml',
-        'ai',
-        '@turf/circle'
+        'ai'
       ]
     }
   },
